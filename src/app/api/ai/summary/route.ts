@@ -9,6 +9,8 @@
 
 import { NextResponse } from 'next/server'
 import { serverCache, TTL } from '@/lib/cache/server'
+import { normalizeBriefingTtl } from '@/lib/ai/briefingTtl'
+import { regimeSummaryPacketCacheKey } from '@/lib/ai/summaryPacketHash'
 import { parseModelJson } from '@/lib/ai/parseModelJson'
 import { buildSummaryPrompt, validateSummaryConsistency } from '@/lib/ai/prompts'
 import type { RegimeSummaryPacket } from '@/lib/ai/packets'
@@ -16,16 +18,6 @@ import type { TopLevelBriefing } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
-
-function hashPacket(packet: RegimeSummaryPacket): string {
-  const key = `${packet.regime.label}:${packet.regime.confidence}:${JSON.stringify(packet.regime.subScores)}`
-  let hash = 0
-  for (let i = 0; i < key.length; i++) {
-    hash = ((hash << 5) - hash) + key.charCodeAt(i)
-    hash |= 0
-  }
-  return Math.abs(hash).toString(16).slice(0, 8)
-}
 
 export async function POST(request: Request) {
   const apiKey = process.env.ANTHROPIC_API_KEY?.trim()
@@ -44,10 +36,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
   }
 
-  const cacheKey = `ai:summary:${hashPacket(packet)}`
+  const cacheKey = `ai:summary:${regimeSummaryPacketCacheKey(packet)}`
   const cached   = serverCache.get<TopLevelBriefing>(cacheKey)
   if (cached && !cached.isStale) {
-    return NextResponse.json(cached.data, {
+    const body = normalizeBriefingTtl(cached.data, TTL.AI_SUMMARY)
+    return NextResponse.json(body, {
       headers: { 'X-From-Cache': 'true', 'X-Cache-Age': String(Math.round(cached.ageMs / 1000)) + 's' },
     })
   }

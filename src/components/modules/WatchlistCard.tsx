@@ -10,11 +10,24 @@ interface Props {
   items: WatchlistItem[]
 }
 
+/** Credit / duration ETFs — analytical bucket separate from sector tape */
+const CREDIT_RATE_SYMS = new Set(['HYG', 'LQD', 'TLT', 'IEF', 'SHY', 'US10Y', 'US2Y'])
+
 const GROUPS: { id: string; label: string; pred: (i: WatchlistItem) => boolean }[] = [
   { id: 'idx', label: 'Indices', pred: i => i.category === 'index' },
   { id: 'vol', label: 'Volatility', pred: i => i.category === 'vol' },
-  { id: 'rate', label: 'Rates & breadth', pred: i => i.category === 'rate' || i.category === 'breadth' },
-  { id: 'etf', label: 'Sectors & risk', pred: i => i.category === 'etf' },
+  {
+    id: 'credit',
+    label: 'Credit & rates proxies',
+    pred: i => CREDIT_RATE_SYMS.has(i.symbol) || i.category === 'rate' || i.category === 'breadth',
+  },
+  {
+    id: 'etf',
+    label: 'Sectors & equity risk',
+    pred: i =>
+      i.category === 'etf' && !CREDIT_RATE_SYMS.has(i.symbol),
+  },
+  { id: 'fxcm', label: 'FX · commodities · crypto', pred: i => i.category === 'fx' || i.category === 'commodity' || i.category === 'crypto' },
   { id: 'stock', label: 'Single names', pred: i => i.category === 'stock' },
 ]
 
@@ -95,7 +108,7 @@ export function WatchlistCard({ items }: Props) {
       variant="secondary"
       sourceType="observed"
       footer={meta0 ? <ModuleMetaFooter meta={meta0} /> : undefined}
-      subtitle="Grouped tape · 5D micro-path"
+      subtitle="Indices · vol · credit/rates · sectors · 5D path"
       noPad
     >
       <div className="divide-y divide-ops-700">
@@ -155,9 +168,11 @@ export function WatchlistCard({ items }: Props) {
                         <td className="text-right align-middle whitespace-nowrap">
                           <span className={clsx(
                             'font-mono text-xs tabular-nums',
-                            (item.changePct1d ?? 0) > 0 ? 'text-positive' :
-                            (item.changePct1d ?? 0) < 0 ? 'text-negative' :
-                            'text-neutral',
+                            item.changePct1d != null && Number.isFinite(item.changePct1d) && item.changePct1d > 0
+                              ? 'text-positive'
+                              : item.changePct1d != null && Number.isFinite(item.changePct1d) && item.changePct1d < 0
+                                ? 'text-negative'
+                                : 'text-neutral',
                           )}>
                             {item.changePct1d != null && Number.isFinite(item.changePct1d)
                               ? `${item.changePct1d > 0 ? '+' : ''}${item.changePct1d.toFixed(2)}%`

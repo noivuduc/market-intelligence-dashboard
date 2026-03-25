@@ -34,7 +34,9 @@ export function ModuleMetaFooter({ meta, className }: Props) {
         className={clsx(
           trust === 'unavailable' && 'text-crit-500',
           trust === 'stale' && 'text-amber-500',
+          trust === 'inferred' && 'text-amber-600/90',
           trust === 'fallback' && 'text-amber-600',
+          trust === 'delayed' && 'text-steel-400',
           trust === 'fresh' && 'text-tac-600',
         )}
       >

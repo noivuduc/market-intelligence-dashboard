@@ -48,10 +48,10 @@ export function CrossAssetStrip({ items }: Props) {
           Cross-asset tape
         </span>
         <span className="text-[0.6rem] font-mono text-ink-ghost">
-          Yahoo Finance (delayed) · regime context tags
+          SPX · NDX · RUT · VIX · 10Y · DXY · BTC · Gold · Oil — Yahoo (unofficial / delayed)
         </span>
       </div>
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 divide-x divide-y divide-ops-800 lg:divide-y-0">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-9 divide-x divide-y divide-ops-800 xl:divide-y-0">
         {items.map(item => {
           const pct = item.changePct1d
           const pctOk = pct != null && Number.isFinite(pct)
@@ -88,8 +88,21 @@ export function CrossAssetStrip({ items }: Props) {
                   {!pctOk ? '—' : `${pct > 0 ? '+' : ''}${pct.toFixed(2)}%`}
                 </div>
               </div>
-              <div className="text-[0.6rem] font-mono uppercase tracking-wider text-steel-500 leading-tight border-l-2 border-tac-700/50 pl-1.5">
-                {item.regimeTag}
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                <span
+                  className={clsx(
+                    'text-[0.55rem] font-mono uppercase tracking-wider px-1 py-px rounded-sm border',
+                    item.trend === 'rising' && 'border-tac-800 text-tac-500',
+                    item.trend === 'falling' && 'border-crit-900 text-crit-500',
+                    item.trend === 'volatile' && 'border-amber-800 text-amber-500',
+                    (item.trend === 'flat' || !item.trend) && 'border-ops-600 text-steel-500',
+                  )}
+                >
+                  {item.trend}
+                </span>
+                <span className="text-[0.6rem] font-mono text-steel-500 leading-tight border-l-2 border-tac-700/40 pl-1.5 flex-1 min-w-0">
+                  {item.regimeTag}
+                </span>
               </div>
             </div>
           )

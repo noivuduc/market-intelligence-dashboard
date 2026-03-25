@@ -9,6 +9,7 @@ export type TrustOperationalState =
   | 'fresh'
   | 'delayed'
   | 'stale'
+  | 'inferred'
   | 'unavailable'
   | 'fallback'
 
@@ -17,6 +18,7 @@ const DAY_MS = 86_400_000
 export function trustOperationalState(meta: SourceMeta): TrustOperationalState {
   if (meta.fetchError) return 'unavailable'
   if (meta.isFallback) return 'fallback'
+  if (meta.dataClass === 'inferred') return 'inferred'
   if (meta.dataClass === 'delayed') return 'delayed'
 
   const asOf = new Date(meta.dataAsOf).getTime()
@@ -38,6 +40,8 @@ export function trustStyleClass(state: TrustOperationalState): string {
       return 'border-l-steel-500'
     case 'stale':
       return 'border-l-amber-600'
+    case 'inferred':
+      return 'border-l-amber-700/70'
     case 'fallback':
       return 'border-l-amber-700 border-dashed'
     case 'unavailable':

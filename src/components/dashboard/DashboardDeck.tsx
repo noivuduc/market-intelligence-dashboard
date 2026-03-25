@@ -13,6 +13,7 @@ import { LiquidityCard } from '@/components/modules/LiquidityCard'
 import { BreadthCard } from '@/components/modules/BreadthCard'
 import { OptionsCard } from '@/components/modules/OptionsCard'
 import { FlowsCard } from '@/components/modules/FlowsCard'
+import { InternalsCard } from '@/components/modules/InternalsCard'
 import { RetailOrganicCard } from '@/components/modules/RetailOrganicCard'
 import { CollarCard } from '@/components/modules/CollarCard'
 import { WatchlistCard } from '@/components/modules/WatchlistCard'
@@ -423,6 +424,12 @@ export function DashboardDeck({
         <div key="flows">
           <GridChrome id="flows">
             <FlowsCard data={state.flows} />
+          </GridChrome>
+        </div>
+
+        <div key="internals">
+          <GridChrome id="internals">
+            <InternalsCard data={state.internals} />
           </GridChrome>
         </div>
 

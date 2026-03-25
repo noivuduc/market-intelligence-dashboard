@@ -493,12 +493,15 @@ export function getMockDashboardState(): DashboardState {
     },
 
     crossAsset: [
-      { symbol: 'BTC', displayName: 'Bitcoin', yahooSymbol: 'BTC-USD', price: 98500, changePct1d: -0.35, trend: 'flat', regimeTag: 'Risk / liquidity', meta: equityMeta },
-      { symbol: 'GC', displayName: 'Gold', yahooSymbol: 'GC=F', price: 3020, changePct1d: 0.42, trend: 'rising', regimeTag: 'Safety / inflation hedge', meta: equityMeta },
-      { symbol: 'CL', displayName: 'WTI crude', yahooSymbol: 'CL=F', price: 71.2, changePct1d: -0.8, trend: 'falling', regimeTag: 'Growth / geopolitical', meta: equityMeta },
-      { symbol: 'DXY', displayName: 'Dollar index', yahooSymbol: 'DX-Y.NYB', price: 104.1, changePct1d: 0.12, trend: 'flat', regimeTag: 'Dollar liquidity', meta: equityMeta },
-      { symbol: 'US10Y', displayName: '10Y yield', yahooSymbol: '^TNX', price: 4.42, changePct1d: 1.1, trend: 'rising', regimeTag: 'Discount rate', meta: treasuryMeta },
+      { symbol: 'SPX', displayName: 'S&P 500', yahooSymbol: '^GSPC', price: 5305, changePct1d: 0.4, trend: 'rising', regimeTag: 'Broad U.S. equity / risk tether', meta: equityMeta },
+      { symbol: 'NDX', displayName: 'Nasdaq 100', yahooSymbol: '^NDX', price: 18742, changePct1d: 0.6, trend: 'rising', regimeTag: 'Growth & liquidity tilt', meta: equityMeta },
+      { symbol: 'RUT', displayName: 'Russell 2000', yahooSymbol: '^RUT', price: 2074, changePct1d: -0.3, trend: 'falling', regimeTag: 'Small-cap / breadth', meta: equityMeta },
       { symbol: 'VIX', displayName: 'VIX', yahooSymbol: '^VIX', price: 14.5, changePct1d: -2.1, trend: 'falling', regimeTag: 'Risk stress', meta: equityMeta },
+      { symbol: 'US10Y', displayName: '10Y yield', yahooSymbol: '^TNX', price: 4.42, changePct1d: 1.1, trend: 'rising', regimeTag: 'Discount rate / multiples', meta: treasuryMeta },
+      { symbol: 'DXY', displayName: 'Dollar index', yahooSymbol: 'DX-Y.NYB', price: 104.1, changePct1d: 0.12, trend: 'flat', regimeTag: 'Dollar liquidity / global pressure', meta: equityMeta },
+      { symbol: 'BTC', displayName: 'Bitcoin', yahooSymbol: 'BTC-USD', price: 98500, changePct1d: -0.35, trend: 'flat', regimeTag: 'Risk appetite / liquidity proxy', meta: equityMeta },
+      { symbol: 'GC', displayName: 'Gold futures', yahooSymbol: 'GC=F', price: 3020, changePct1d: 0.42, trend: 'rising', regimeTag: 'Safety / inflation hedge', meta: equityMeta },
+      { symbol: 'CL', displayName: 'WTI crude', yahooSymbol: 'CL=F', price: 71.2, changePct1d: -0.8, trend: 'falling', regimeTag: 'Growth / inflation / geopolitical', meta: equityMeta },
     ],
 
     watchlist: [

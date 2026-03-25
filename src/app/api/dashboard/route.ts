@@ -19,7 +19,9 @@ import { buildMacroModule }     from '@/lib/features/macro'
 import { buildMarketSnapshot }  from '@/lib/features/market'
 import { computeRegime }        from '@/lib/regime/engine'
 import { buildPlaceholders }    from './placeholders'
+import { buildDashboardAlerts } from '@/lib/alerts/buildDashboardAlerts'
 import type { DashboardState, FedPolicyModule, TreasuryModule, LiquidityModule, MacroModule } from '@/lib/types'
+import type { MarketSnapshot } from '@/lib/features/market'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -76,7 +78,21 @@ export async function GET() {
 
   // ---- Derive alerts from regime + module states ----
 
-  const alerts = buildAlerts(regime, fed as FedPolicyModule, treasury as TreasuryModule, liquidity as LiquidityModule)
+  const marketSnap: MarketSnapshot | null =
+    marketResult.status === 'fulfilled' ? marketResult.value.data : null
+  const alerts = buildDashboardAlerts(
+    regime,
+    fed as FedPolicyModule,
+    treasury as TreasuryModule,
+    liquidity as LiquidityModule,
+    macro as MacroModule,
+    marketSnap,
+  )
+
+  const whatBreaksExecutive =
+    regime.risks.length > 0
+      ? regime.risks.slice(0, 3).join(' · ')
+      : 'Sustained deterioration in credit, volatility, or breadth versus the current posture would invalidate this read.'
 
   // ---- Build executive summary (AI briefing filled asynchronously by client) ----
 
@@ -95,7 +111,7 @@ export async function GET() {
       topChanges: regime.drivers,
       topRisks:   regime.risks,
       topWatch:   regime.watchNext,
-      whatBreaks: 'AI briefing not yet loaded. Call /api/ai/summary.',
+      whatBreaks: whatBreaksExecutive,
       lastUpdated: new Date().toISOString(),
     },
     fed:       fed as FedPolicyModule,
@@ -123,71 +139,4 @@ export async function GET() {
       'X-Overall-Status':     state.dataQuality.overallStatus,
     },
   })
-}
-
-// ---- Alert builder ----
-
-function buildAlerts(
-  regime:   ReturnType<typeof computeRegime>,
-  fed:      FedPolicyModule,
-  treasury: TreasuryModule,
-  liq:      LiquidityModule,
-) {
-  const alerts = []
-  const now    = new Date().toISOString()
-
-  // Regime change alert
-  if (regime.label === 'risk-off') {
-    alerts.push({
-      id: 'regime-risk-off',
-      severity: 'elevated' as const,
-      title: 'Regime: Risk-Off',
-      explanation: 'Regime engine classifies current conditions as risk-off. Review liquidity, credit, and breadth signals.',
-      affectedModules: ['Regime', 'Liquidity', 'Breadth'],
-      watchItems: ['Credit spreads', 'SPX key support', 'VIX level'],
-      createdAt: now, acknowledged: false,
-    })
-  }
-
-  // FOMC proximity alert
-  if (fed.daysToFomc !== null && fed.daysToFomc <= 7) {
-    alerts.push({
-      id: 'fomc-imminent',
-      severity: 'watch' as const,
-      title: `FOMC Meeting in ${fed.daysToFomc} day(s)`,
-      explanation: `Federal Reserve policy meeting on ${fed.nextFomcDate}. Expect elevated volatility in rates and equities.`,
-      affectedModules: ['Fed & Policy', 'Treasury & Rates'],
-      watchItems: ['Fed statement', 'Rate path revision', 'Balance sheet guidance'],
-      createdAt: now, acknowledged: false,
-    })
-  }
-
-  // Treasury rates alert
-  const y10  = treasury.curve.y10.value
-  if (y10 !== null && y10 > 4.6) {
-    alerts.push({
-      id: 'rates-elevated',
-      severity: 'watch' as const,
-      title: `10Y Treasury Yield Above 4.6%`,
-      explanation: `10Y yield at ${treasury.curve.y10.formatted} tightens financial conditions. Watch equity multiple sensitivity.`,
-      affectedModules: ['Treasury & Rates', 'Liquidity'],
-      watchItems: ['10Y at 4.75%', 'IG spread widening', 'SPX P/E compression'],
-      createdAt: now, acknowledged: false,
-    })
-  }
-
-  // Credit stress alert
-  if (liq.creditStress === 'elevated' || liq.creditStress === 'high') {
-    alerts.push({
-      id: 'credit-stress',
-      severity: liq.creditStress === 'high' ? 'critical' as const : 'elevated' as const,
-      title: `HY Credit Stress: ${liq.creditStress.toUpperCase()}`,
-      explanation: `HY spreads at ${liq.hySpread.formatted}. ${liq.creditStress === 'high' ? 'Severe credit deterioration — systemic risk watch.' : 'Credit conditions deteriorating — monitor closely.'}`,
-      affectedModules: ['Liquidity', 'Regime'],
-      watchItems: ['HY spread 400+', 'IG widening confirmation', 'Equity correlation'],
-      createdAt: now, acknowledged: false,
-    })
-  }
-
-  return alerts
 }

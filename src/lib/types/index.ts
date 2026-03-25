@@ -252,13 +252,15 @@ export interface LiquidityModule {
 
 export interface IndexTrend {
   symbol:     string
-  price:      number
+  /** Null when quote unavailable — never coerce to 0 */
+  price:      number | null
   /** Daily % change; null if not computable */
   change1d:   number | null
-  change1w:   number
-  pctFrom20d: number
-  pctFrom50d: number
-  pctFrom200d:number
+  /** Null until computed from multi-day history (do not show 0 as placeholder) */
+  change1w:   number | null
+  pctFrom20d: number | null
+  pctFrom50d: number | null
+  pctFrom200d:number | null
   trend:      TrendDirection
 }
 
@@ -401,6 +403,8 @@ export interface Alert {
   watchItems:      string[]
   createdAt:       string
   acknowledged:    boolean
+  /** Analytical confidence for this alert (not market prediction) */
+  confidence?:     ConfidenceLevel
 }
 
 export interface DashboardState {

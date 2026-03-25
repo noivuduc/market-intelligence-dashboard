@@ -26,4 +26,7 @@ describe('trustOperationalState', () => {
   it('returns delayed for delayed dataClass', () => {
     expect(trustOperationalState(meta({ dataClass: 'delayed' }))).toBe('delayed')
   })
+  it('returns inferred for inferred dataClass', () => {
+    expect(trustOperationalState(meta({ dataClass: 'inferred' }))).toBe('inferred')
+  })
 })

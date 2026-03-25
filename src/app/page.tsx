@@ -2,19 +2,21 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import type { DashboardState, TopLevelBriefing } from '@/lib/types'
 import { buildDeterministicBriefing, isPlaceholderBriefing } from '@/lib/brief/deterministicBrief'
-import {
-  buildFedPacket, buildTreasuryPacket, buildMacroPacket,
-  buildLiquidityPacket, buildBreadthPacket, buildOptionsPacket,
-  buildRegimeSummaryPacket,
-} from '@/lib/ai/packets'
+import { buildRegimeSummaryPacket } from '@/lib/ai/packets'
+import { regimeSummaryPacketCacheKey } from '@/lib/ai/summaryPacketHash'
 import { TopBar }              from '@/components/layout/TopBar'
 import { DataQualityBanner }   from '@/components/ui/DataQualityBanner'
 import { CrossAssetStrip }     from '@/components/command/CrossAssetStrip'
 import type { SitrepSource }   from '@/components/command/CommandBriefHero'
 import { DashboardDeck }       from '@/components/dashboard/DashboardDeck'
 
-const MARKET_REFRESH_MS  = 60_000    // Layer 1: prices
-const AI_REFRESH_MS      = 15 * 60_000  // Layer 3: AI summary
+const MARKET_REFRESH_MS = 60_000 // Layer 1: prices
+
+/** Layer 3: AI poll — default 30m; set NEXT_PUBLIC_AI_REFRESH_MS (milliseconds) to override */
+const AI_REFRESH_MS = (() => {
+  const n = Number(process.env.NEXT_PUBLIC_AI_REFRESH_MS)
+  return Number.isFinite(n) && n >= 60_000 ? n : 30 * 60_000
+})()
 
 export default function DashboardPage() {
   const [state,    setState]    = useState<DashboardState | null>(null)
@@ -24,6 +26,17 @@ export default function DashboardPage() {
   const [error,    setError]    = useState<string | null>(null)
   const [lastFetch,setLastFetch]= useState('')
   const aiRefreshRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const stateRef = useRef<DashboardState | null>(null)
+  const briefingRef = useRef<TopLevelBriefing | null>(null)
+  const lastAiPacketKeyRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    stateRef.current = state
+  }, [state])
+
+  useEffect(() => {
+    briefingRef.current = briefing
+  }, [briefing])
 
   // ---- Fetch market data ----
   const fetchData = useCallback(async () => {
@@ -41,23 +54,40 @@ export default function DashboardPage() {
     }
   }, [])
 
-  // ---- Fetch AI summary (separate 15-min cycle) ----
-  const fetchAISummary = useCallback(async (data: DashboardState) => {
-    if (!data.dataQuality.aiAvailable) {
+  /**
+   * Executive AI brief — skips HTTP entirely when regime fingerprint matches last success
+   * and the current briefing is still within expiresAt (saves cost vs polling every N minutes).
+   * Server still dedupes with the same fingerprint + in-memory cache on actual POSTs.
+   */
+  const fetchAISummary = useCallback(async (opts?: { force?: boolean }) => {
+    const data = stateRef.current
+    if (!data?.dataQuality.aiAvailable) {
       setAiBriefError(null)
       return
     }
+    const packet = buildRegimeSummaryPacket(
+      data.regime,
+      data.fed,
+      data.treasury,
+      data.macro,
+      data.liquidity,
+      data.breadth,
+      data.options,
+    )
+    const fp = regimeSummaryPacketCacheKey(packet)
+    const currentBrief = briefingRef.current
+    if (
+      !opts?.force &&
+      fp === lastAiPacketKeyRef.current &&
+      currentBrief &&
+      typeof currentBrief.expiresAt === 'string' &&
+      new Date(currentBrief.expiresAt).getTime() > Date.now()
+    ) {
+      return
+    }
+
     setAiBriefError(null)
     try {
-      const packet = buildRegimeSummaryPacket(
-        data.regime,
-        data.fed,
-        data.treasury,
-        data.macro,
-        data.liquidity,
-        data.breadth,
-        data.options,
-      )
       const res = await fetch('/api/ai/summary', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -80,6 +110,7 @@ export default function DashboardPage() {
         return
       }
       setBriefing(brief)
+      lastAiPacketKeyRef.current = fp
       setAiBriefError(null)
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'AI summary request failed'
@@ -109,16 +140,18 @@ export default function DashboardPage() {
     return () => window.removeEventListener('hashchange', scrollToHash)
   }, [state])
 
-  // When state first loads, trigger AI summary + set up 15-min AI refresh
+  // AI: on load + regime label/confidence change (immediate), then poll on interval using latest stateRef
   useEffect(() => {
     if (!state) return
-    fetchAISummary(state)
+    void fetchAISummary({ force: true })
     if (aiRefreshRef.current) clearInterval(aiRefreshRef.current)
-    aiRefreshRef.current = setInterval(() => fetchAISummary(state), AI_REFRESH_MS)
+    aiRefreshRef.current = setInterval(() => {
+      void fetchAISummary()
+    }, AI_REFRESH_MS)
     return () => {
       if (aiRefreshRef.current) clearInterval(aiRefreshRef.current)
     }
-  }, [state?.regime.label, state?.regime.confidence]) // re-trigger on regime change
+  }, [state?.regime.label, state?.regime.confidence, fetchAISummary])
 
   // Merge AI briefing into state for components
   const executive = state ? {

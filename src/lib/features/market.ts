@@ -16,19 +16,22 @@ import type {
 } from '@/lib/types'
 import { sessionChangeFromCloses } from '@/lib/market/sessionChange'
 
-// ---- Cross-asset strip (regime-context tags) ----
+// ---- Cross-asset strip (institutional situational tape) ----
 const CROSS_ASSET_DEFS: {
   symbol: string
   displayName: string
   yahooSymbol: string
   regimeTag: string
 }[] = [
-  { symbol: 'BTC', displayName: 'Bitcoin', yahooSymbol: YF_SYMBOLS.BTC, regimeTag: 'Risk / liquidity' },
-  { symbol: 'GC', displayName: 'Gold', yahooSymbol: YF_SYMBOLS.GOLD_FUT, regimeTag: 'Safety / inflation hedge' },
-  { symbol: 'CL', displayName: 'WTI crude', yahooSymbol: YF_SYMBOLS.OIL_FUT, regimeTag: 'Growth / geopolitical' },
-  { symbol: 'DXY', displayName: 'Dollar index', yahooSymbol: YF_SYMBOLS.DXY, regimeTag: 'Dollar liquidity' },
-  { symbol: 'US10Y', displayName: '10Y yield', yahooSymbol: YF_SYMBOLS.US10Y, regimeTag: 'Discount rate' },
+  { symbol: 'SPX', displayName: 'S&P 500', yahooSymbol: YF_SYMBOLS.SPX, regimeTag: 'Broad U.S. equity / risk tether' },
+  { symbol: 'NDX', displayName: 'Nasdaq 100', yahooSymbol: YF_SYMBOLS.NDX, regimeTag: 'Growth & liquidity tilt' },
+  { symbol: 'RUT', displayName: 'Russell 2000', yahooSymbol: YF_SYMBOLS.RUT, regimeTag: 'Small-cap / breadth' },
   { symbol: 'VIX', displayName: 'VIX', yahooSymbol: YF_SYMBOLS.VIX, regimeTag: 'Risk stress' },
+  { symbol: 'US10Y', displayName: '10Y yield', yahooSymbol: YF_SYMBOLS.US10Y, regimeTag: 'Discount rate / multiples' },
+  { symbol: 'DXY', displayName: 'Dollar index', yahooSymbol: YF_SYMBOLS.DXY, regimeTag: 'Dollar liquidity / global pressure' },
+  { symbol: 'BTC', displayName: 'Bitcoin', yahooSymbol: YF_SYMBOLS.BTC, regimeTag: 'Risk appetite / liquidity proxy' },
+  { symbol: 'GC', displayName: 'Gold futures', yahooSymbol: YF_SYMBOLS.GOLD_FUT, regimeTag: 'Safety / inflation hedge' },
+  { symbol: 'CL', displayName: 'WTI crude', yahooSymbol: YF_SYMBOLS.OIL_FUT, regimeTag: 'Growth / inflation / geopolitical' },
 ]
 
 // ---- Helpers ----
@@ -62,12 +65,12 @@ function makeIndexTrend(
 
   return {
     symbol,
-    price: Number.isFinite(price) ? price : 0,
+    price: Number.isFinite(price) ? price : null,
     change1d:    changePct,
-    change1w:    0,
-    pctFrom20d:  0,
-    pctFrom50d:  0,
-    pctFrom200d: 0,
+    change1w:    null,
+    pctFrom20d:  null,
+    pctFrom50d:  null,
+    pctFrom200d: null,
     trend:       trend(changePct),
   }
 }
@@ -148,15 +151,15 @@ export async function buildMarketSnapshot(): Promise<MarketSnapshot> {
   // ---- SPX / NDX / RUT index trends ----
   const spxTrend: IndexTrend = spx
     ? makeIndexTrend('^GSPC', spx.price, spx.previousClose, spx.high52w, spx.low52w)
-    : { symbol: 'SPX', price: 0, change1d: null, change1w: 0, pctFrom20d: 0, pctFrom50d: 0, pctFrom200d: 0, trend: 'flat' }
+    : { symbol: '^GSPC', price: null, change1d: null, change1w: null, pctFrom20d: null, pctFrom50d: null, pctFrom200d: null, trend: 'flat' }
 
   const ndxTrend: IndexTrend = ndx
     ? makeIndexTrend('^NDX', ndx.price, ndx.previousClose, ndx.high52w, ndx.low52w)
-    : { symbol: 'NDX', price: 0, change1d: null, change1w: 0, pctFrom20d: 0, pctFrom50d: 0, pctFrom200d: 0, trend: 'flat' }
+    : { symbol: '^NDX', price: null, change1d: null, change1w: null, pctFrom20d: null, pctFrom50d: null, pctFrom200d: null, trend: 'flat' }
 
   const rutTrend: IndexTrend = rut
     ? makeIndexTrend('^RUT', rut.price, rut.previousClose, rut.high52w, rut.low52w)
-    : { symbol: 'RUT', price: 0, change1d: null, change1w: 0, pctFrom20d: 0, pctFrom50d: 0, pctFrom200d: 0, trend: 'flat' }
+    : { symbol: '^RUT', price: null, change1d: null, change1w: null, pctFrom20d: null, pctFrom50d: null, pctFrom200d: null, trend: 'flat' }
 
   // ---- RSP/SPY ratio (equal-weight vs cap-weight) ----
   const ewRatio     = (rsp && spy && spy.price > 0) ? rsp.price / spy.price : null

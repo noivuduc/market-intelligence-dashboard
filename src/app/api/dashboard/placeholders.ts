@@ -144,7 +144,16 @@ function placeholderMacro(): MacroModule {
 }
 
 function placeholderMarket(): MarketSnapshot {
-  const emptyIndex = { symbol: '—', price: 0, change1d: null as null, change1w: 0, pctFrom20d: 0, pctFrom50d: 0, pctFrom200d: 0, trend: 'flat' as const }
+  const emptyIndex = {
+    symbol: '—',
+    price: null as null,
+    change1d: null as null,
+    change1w: null,
+    pctFrom20d: null,
+    pctFrom50d: null,
+    pctFrom200d: null,
+    trend: 'flat' as const,
+  }
   const mv = (u: string) => unavailableMV(u, 'Yahoo Finance unavailable')
   return {
     breadth: {
@@ -181,7 +190,7 @@ function placeholderMarket(): MarketSnapshot {
 function placeholderRetail(): RetailModule {
   const mv = (u: string) => unavailableMV(u, 'No real-time retail data source configured')
   return {
-    participationLevel: 'medium',
+    participationLevel: 'low',
     fractionalProxy:    mv('index'),
     oddLotProxy:        mv('%'),
     retailOptionsProxy: mv('put/call'),

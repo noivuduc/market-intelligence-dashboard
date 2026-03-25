@@ -17,6 +17,7 @@ export const DASHBOARD_CARD_IDS = [
   'breadth',
   'options',
   'flows',
+  'internals',
   'retail-organic',
   'collar',
 ] as const
@@ -60,6 +61,7 @@ export const LAYOUT_CONSTRAINTS: Partial<
   breadth:         { minW: 4,  maxW: 12, minH: 6, maxH: 24 },
   options:         { minW: 4,  maxW: 12, minH: 5, maxH: 24 },
   flows:           { minW: 3,  maxW: 12, minH: 4, maxH: 18 },
+  internals:       { minW: 4,  maxW: 12, minH: 4, maxH: 16 },
   'retail-organic':{ minW: 4,  maxW: 12, minH: 5, maxH: 22 },
   collar:          { minW: 3,  maxW: 12, minH: 4, maxH: 16 },
 }
@@ -90,8 +92,9 @@ export const DEFAULT_LAYOUT_LG: Layout = applyConstraints([
   item('breadth',       5, 27, 7, 9),
   item('options',       0, 36, 7, 10),
   item('flows',         7, 36, 5, 8),
-  item('retail-organic',0, 46, 8, 9),
-  item('collar',        8, 46, 4, 8),
+  item('internals',     0, 46, 12, 6, { minH: 4 }),
+  item('retail-organic',0, 52, 8, 9),
+  item('collar',        8, 52, 4, 8),
 ])
 
 /** Laptop / tablet — 10 columns */
@@ -106,8 +109,9 @@ export const DEFAULT_LAYOUT_MD: Layout = applyConstraints([
   item('breadth',       5, 33, 5, 9),
   item('options',       0, 42, 6, 9),
   item('flows',         6, 42, 4, 8),
-  item('retail-organic',0, 51, 10, 8),
-  item('collar',        0, 59, 10, 6),
+  item('internals',     0, 50, 10, 5, { minH: 3 }),
+  item('retail-organic',0, 55, 10, 8),
+  item('collar',        0, 63, 10, 6),
 ])
 
 /** Small tablet — 6 columns */
@@ -122,8 +126,9 @@ export const DEFAULT_LAYOUT_SM: Layout = applyConstraints([
   item('breadth',       0, 50, 6, 9),
   item('options',       0, 59, 6, 9),
   item('flows',         0, 68, 6, 7),
-  item('retail-organic',0, 75, 6, 9),
-  item('collar',        0, 84, 6, 7),
+  item('internals',     0, 75, 6, 5, { minH: 3 }),
+  item('retail-organic',0, 80, 6, 9),
+  item('collar',        0, 89, 6, 7),
 ])
 
 /** Narrow — 4 columns, stacked */
@@ -138,8 +143,9 @@ export const DEFAULT_LAYOUT_XS_SIMPLE: Layout = applyConstraints([
   item('breadth',       0, 55, 4, 10),
   item('options',       0, 65, 4, 10),
   item('flows',         0, 75, 4, 7),
-  item('retail-organic',0, 82, 4, 10),
-  item('collar',        0, 92, 4, 7),
+  item('internals',     0, 82, 4, 5, { minH: 3 }),
+  item('retail-organic',0, 87, 4, 10),
+  item('collar',        0, 97, 4, 7),
 ])
 
 export const DEFAULT_LAYOUT_XXS: Layout = applyConstraints(
@@ -168,6 +174,7 @@ export const HASH_BY_CARD: Record<DashboardCardId, string> = {
   breadth:         'breadth',
   options:         'options',
   flows:           'flows',
+  internals:       'internals',
   'retail-organic':'retail-organic',
   collar:          'collar',
 }
@@ -184,6 +191,7 @@ export const CARD_LABELS: Record<DashboardCardId, string> = {
   breadth:         'Breadth',
   options:         'Options',
   flows:           'Flows',
+  internals:       'Daily internals',
   'retail-organic':'Retail & organic',
   collar:          'Collar / structure',
 }

@@ -60,6 +60,11 @@ export function AlertsPanel({ alerts }: Props) {
                 <span className="text-ink-muted">
                   WATCH <span className="text-amber-600/90">{alert.watchItems.slice(0, 3).join(' · ')}</span>
                 </span>
+                {alert.confidence && (
+                  <span className="text-ink-muted">
+                    CONF <span className="text-steel-400 uppercase">{alert.confidence}</span>
+                  </span>
+                )}
               </div>
             </div>
           </li>
