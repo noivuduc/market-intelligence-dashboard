@@ -1,0 +1,260 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import 'react-grid-layout/css/styles.css';
+@import 'react-resizable/css/styles.css';
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+/* ---- Base reset for command-center aesthetic ---- */
+
+* {
+  box-sizing: border-box;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+:root {
+  --scrollbar-track: #0D1117;
+  --scrollbar-thumb: #243040;
+  --scrollbar-thumb-hover: #2E3D50;
+}
+
+html {
+  background-color: #080B0E;
+  color: #E2EAF0;
+  font-size: 15px;
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  background-color: #080B0E;
+  color: #E2EAF0;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* ---- Custom scrollbar ---- */
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+
+/* ---- Typography helpers ---- */
+
+.font-mono {
+  font-family: 'JetBrains Mono', 'Fira Code', Menlo, monospace;
+}
+
+/* ---- Tactical grid lines ---- */
+
+.grid-overlay {
+  background-image:
+    linear-gradient(rgba(61, 168, 94, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(61, 168, 94, 0.03) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+/* ---- Scan line effect ---- */
+
+.scan-line::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(to right, transparent, rgba(61, 168, 94, 0.3), transparent);
+  animation: scan 8s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes scan {
+  0%   { top: 0; }
+  100% { top: 100%; }
+}
+
+/* ---- Tactical card ---- */
+
+.tac-card {
+  background: #111820;
+  border: 1px solid #1C2636;
+  border-radius: 4px;
+}
+
+.tac-card-header {
+  background: #0D1117;
+  border-bottom: 1px solid #1C2636;
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* ---- Status chip variants ---- */
+
+.chip-stable       { @apply bg-tac-900/50 text-tac-400 border border-tac-800; }
+.chip-elevated     { @apply bg-amber-900/40 text-amber-400 border border-amber-800; }
+.chip-critical     { @apply bg-crit-900/40 text-crit-400 border border-crit-800; }
+.chip-watch        { @apply bg-amber-900/30 text-amber-300 border border-amber-800; }
+.chip-confirmed    { @apply bg-tac-900/40 text-tac-300 border border-tac-700; }
+.chip-inferred     { @apply bg-steel-900/40 text-steel-400 border border-steel-700; }
+.chip-delayed      { @apply bg-ops-500/40 text-ink-muted border border-ops-400; }
+.chip-transitioning{ @apply bg-steel-900/30 text-steel-300 border border-steel-700; }
+.chip-inactive     { @apply bg-ops-800/50 text-ink-ghost border border-ops-600; }
+
+/* ---- Positive / Negative color utilities ---- */
+
+.text-positive { color: #3DA85E; }
+.text-negative { color: #C72019; }
+.text-neutral  { color: #5A7390; }
+.text-warning  { color: #E89B10; }
+
+/* ---- Regime banner ---- */
+
+.regime-risk-on      { border-left: 3px solid #3DA85E; }
+.regime-risk-off     { border-left: 3px solid #C72019; }
+.regime-sideways     { border-left: 3px solid #5A8EAF; }
+.regime-bottoming    { border-left: 3px solid #E89B10; }
+.regime-topping      { border-left: 3px solid #FBB12D; }
+.regime-transition   { border-left: 3px solid #76A4C3; }
+
+/* ---- Glow effects (restrained) ---- */
+
+.glow-tac  { box-shadow: 0 0 16px rgba(61, 168, 94, 0.2); }
+.glow-crit { box-shadow: 0 0 16px rgba(199, 32, 25, 0.2); }
+.glow-amb  { box-shadow: 0 0 16px rgba(232, 155, 16, 0.2); }
+
+/* ---- Animated confidence bar ---- */
+
+.confidence-bar-fill {
+  transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ---- Number display ---- */
+
+.metric-value {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 1.625rem;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+.metric-value-sm {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 1.0625rem;
+  letter-spacing: -0.01em;
+}
+
+/* ---- Source type indicator bar ---- */
+
+.source-observed    { border-top: 2px solid #3DA85E; }
+.source-derived     { border-top: 2px solid #5A8EAF; }
+.source-inferred    { border-top: 2px solid #E89B10; }
+.source-delayed     { border-top: 2px solid #5A7390; }
+
+/* ---- Intraday chart custom styles ---- */
+
+.recharts-cartesian-grid line {
+  stroke: rgba(58, 77, 99, 0.4) !important;
+}
+.recharts-tooltip-wrapper {
+  outline: none !important;
+}
+
+/* ---- Intelligence brief card ---- */
+
+.brief-card {
+  background: #0D1117;
+  border: 1px solid #1C2636;
+  border-left: 3px solid #3DA85E;
+  border-radius: 4px;
+  padding: 16px;
+}
+
+/* ---- Table styles ---- */
+
+.tac-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.tac-table th {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #5A7390;
+  border-bottom: 1px solid #1C2636;
+  padding: 8px 10px;
+  /* Do not force text-align — Tailwind utilities on <th> must control alignment */
+}
+.tac-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid #111820;
+  font-size: 0.8125rem;
+  color: #9AAFC2;
+}
+.tac-table tr:last-child td {
+  border-bottom: none;
+}
+.tac-table tr:hover td {
+  background: #111820;
+}
+
+/* ---- Alert pulse (for critical) ---- */
+
+@keyframes alert-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.6; }
+}
+.alert-pulse {
+  animation: alert-pulse 2s ease-in-out infinite;
+}
+
+/* ---- Dashboard responsive grid (react-grid-layout) ---- */
+
+.dashboard-rgl .react-grid-item {
+  display: flex;
+  flex-direction: column;
+}
+.dashboard-rgl .react-grid-item > .react-resizable {
+  height: 100%;
+  min-height: 0;
+}
+.dashboard-rgl .react-grid-placeholder {
+  background: rgba(61, 168, 94, 0.1);
+  border: 1px dashed rgba(61, 168, 94, 0.35);
+  border-radius: 2px;
+}
+.dashboard-rgl .react-grid-item > .react-resizable-handle::after {
+  border-right-color: rgba(61, 168, 94, 0.45);
+  border-bottom-color: rgba(61, 168, 94, 0.45);
+}
+
+.dashboard-grid-cell:not(.dashboard-grid-cell--collapsed) .tac-card {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.dashboard-grid-cell:not(.dashboard-grid-cell--collapsed) .tac-card > .flex-1 {
+  min-height: 0;
+  overflow-y: auto;
+}
+.dashboard-grid-cell:not(.dashboard-grid-cell--collapsed) > .flex-1 > .flex.flex-col.gap-3 {
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+}
