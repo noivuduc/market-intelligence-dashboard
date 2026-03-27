@@ -7,7 +7,7 @@ on:
     branches: [main, master]
 
 jobs:
-  build:
+  ci:
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -31,3 +31,6 @@ jobs:
 
       - name: Lint
         run: npm run lint
+
+      - name: Build
+        run: npm run build

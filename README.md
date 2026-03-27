@@ -4,8 +4,8 @@
 > For developers and independent traders who want **context**, not just price charts.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![CI](https://github.com/noivuduc/market-intelligence-dashboard/actions/workflows/ci.yml/badge.svg)](https://github.com/noivuduc/market-intelligence-dashboard/actions/workflows/ci.yml)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)](tsconfig.json)
-[![Tests](https://img.shields.io/badge/tests-106%20passing-brightgreen)](src)
 [![Next.js](https://img.shields.io/badge/Next.js-14-black)](https://nextjs.org)
 
 **Disclaimer:** This is **not financial advice**. The app is for education and research. Market data may be delayed, modeled, or unofficial — verify before acting.
@@ -311,8 +311,6 @@ Anything labeled **proxy** or **derived** in the UI should not be read as exchan
 ---
 
 ## Roadmap
-
-See **`ROADMAP.md`** when present.
 
 **Near-term ideas**
 

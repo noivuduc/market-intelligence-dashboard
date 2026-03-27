@@ -9,6 +9,12 @@ Thanks for helping improve this project.
 3. `cp .env.example .env.local` and add at least **`FRED_API_KEY`** for full macro data (optional for UI-only smoke tests).
 4. `npm run dev` — open the URL printed in the terminal (default port **3001**).
 
+## Before starting a large change
+
+Open a GitHub issue first to discuss the approach. This avoids duplicated effort
+and ensures the change aligns with the project direction before you invest time in it.
+Small fixes (typos, test additions, isolated bug fixes) can go straight to a PR.
+
 ## Before opening a pull request
 
 - `npm test` — all tests should pass.
@@ -26,6 +32,12 @@ Keep PRs **focused** (one concern per PR). Update docs or comments when behavior
 - Data source adapters — `src/lib/sources/`
 
 See **README.md** → Roadmap for larger ideas.
+
+## Running a single test file
+
+```bash
+npx vitest run src/lib/features/macro.test.ts
+```
 
 ## Commit messages
 
