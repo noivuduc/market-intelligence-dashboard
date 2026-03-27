@@ -1,22 +1,48 @@
 // ============================================================
 // Dashboard grid — card ids, default responsive layouts, constraints
 // Snap: rowHeight 36px, margin 10px (matches tactical spacing)
+//
+// DEFAULT_LAYOUT_VERSION: bump this whenever the default positions
+// change in a way that would make a saved v(n-1) layout look wrong.
+// Storage uses this version in the localStorage key, so old saves
+// are automatically abandoned without any migration code.
+//
+// Canonical module order (top → bottom, priority → advanced):
+//
+//  [TOP]      command-brief  cross-asset  event-calendar  alerts
+//  [POLICY]   fed  treasury  macro  liquidity
+//  [MARKET]   breadth  watchlist  flows
+//  [ADVANCED] options  internals  retail-organic  collar
 // ============================================================
 
 import type { Layout, LayoutItem, ResponsiveLayouts } from 'react-grid-layout/legacy'
 
-/** Stable keys for persistence and hash anchors (#fed → data-anchor on wrapper) */
+/** Bump when default positions change enough that old saved layouts
+ *  would appear mis-ordered. The storage key embeds this version so
+ *  any save from version N is silently discarded at version N+1. */
+export const DEFAULT_LAYOUT_VERSION = 2
+
+/**
+ * Stable card IDs — order defines the canonical visual sequence.
+ * normalizeLayouts() iterates this array, so order here = merge order.
+ */
 export const DASHBOARD_CARD_IDS = [
+  // Top section
   'command-brief',
+  'cross-asset',
+  'event-calendar',
   'alerts',
-  'watchlist',
+  // Macro / policy row
   'fed',
   'treasury',
   'macro',
   'liquidity',
+  // Market state row
   'breadth',
-  'options',
+  'watchlist',
   'flows',
+  // Advanced overlays (provider-required modules kept low)
+  'options',
   'internals',
   'retail-organic',
   'collar',
@@ -24,7 +50,7 @@ export const DASHBOARD_CARD_IDS = [
 
 export type DashboardCardId = (typeof DASHBOARD_CARD_IDS)[number]
 
-/** Semantic size presets (documentation + “tidy” hints); grid uses w/h in columns/rows */
+/** Semantic size presets (documentation + "tidy" hints); grid uses w/h in columns/rows */
 export type CardLayoutSize = 'hero' | 'large' | 'medium' | 'small' | 'collapsed'
 
 export const CARD_SIZE_ROWS: Record<CardLayoutSize, { h: number; minH: number; maxH: number }> = {
@@ -32,7 +58,7 @@ export const CARD_SIZE_ROWS: Record<CardLayoutSize, { h: number; minH: number; m
   large:     { h: 9,  minH: 5, maxH: 22 },
   medium:    { h: 8,  minH: 5, maxH: 18 },
   small:     { h: 6,  minH: 4, maxH: 14 },
-  collapsed: { h: 1,  minH: 1, maxH: 2 },
+  collapsed: { h: 1,  minH: 1, maxH: 2  },
 }
 
 function item(
@@ -50,20 +76,21 @@ function item(
 export const LAYOUT_CONSTRAINTS: Partial<
   Record<DashboardCardId, Pick<LayoutItem, 'minW' | 'maxW' | 'minH' | 'maxH'>>
 > = {
-  /** Full-width on lg; minW allows md/sm/xs column counts */
-  'command-brief': { minW: 4, maxW: 12, minH: 5, maxH: 30 },
-  alerts:          { minW: 4,  maxW: 12, minH: 2, maxH: 8 },
-  watchlist:       { minW: 6,  maxW: 12, minH: 4, maxH: 20 },
-  fed:             { minW: 3,  maxW: 12, minH: 5, maxH: 20 },
-  treasury:        { minW: 3,  maxW: 12, minH: 5, maxH: 20 },
-  macro:           { minW: 3,  maxW: 12, minH: 5, maxH: 20 },
-  liquidity:       { minW: 3,  maxW: 12, minH: 5, maxH: 22 },
-  breadth:         { minW: 4,  maxW: 12, minH: 6, maxH: 24 },
-  options:         { minW: 4,  maxW: 12, minH: 5, maxH: 24 },
-  flows:           { minW: 3,  maxW: 12, minH: 4, maxH: 18 },
-  internals:       { minW: 4,  maxW: 12, minH: 4, maxH: 16 },
-  'retail-organic':{ minW: 4,  maxW: 12, minH: 5, maxH: 22 },
-  collar:          { minW: 3,  maxW: 12, minH: 4, maxH: 16 },
+  'command-brief':  { minW: 4, maxW: 12, minH: 5, maxH: 30 },
+  'cross-asset':    { minW: 6, maxW: 12, minH: 3, maxH: 12 },
+  'event-calendar': { minW: 3, maxW: 12, minH: 5, maxH: 22 },
+  alerts:           { minW: 3, maxW: 12, minH: 2, maxH: 8  },
+  fed:              { minW: 3, maxW: 12, minH: 5, maxH: 20 },
+  treasury:         { minW: 3, maxW: 12, minH: 5, maxH: 20 },
+  macro:            { minW: 3, maxW: 12, minH: 5, maxH: 20 },
+  liquidity:        { minW: 3, maxW: 12, minH: 5, maxH: 22 },
+  breadth:          { minW: 4, maxW: 12, minH: 6, maxH: 24 },
+  watchlist:        { minW: 4, maxW: 12, minH: 4, maxH: 20 },
+  flows:            { minW: 3, maxW: 12, minH: 4, maxH: 18 },
+  options:          { minW: 4, maxW: 12, minH: 5, maxH: 24 },
+  internals:        { minW: 4, maxW: 12, minH: 4, maxH: 16 },
+  'retail-organic': { minW: 4, maxW: 12, minH: 5, maxH: 22 },
+  collar:           { minW: 3, maxW: 12, minH: 4, maxH: 16 },
 }
 
 function applyConstraints(layout: Layout): Layout {
@@ -80,83 +107,119 @@ function applyConstraints(layout: Layout): Layout {
   })
 }
 
-/** Desktop — 12 columns */
+// ============================================================
+// DESKTOP — 12 columns
+//
+//  y= 0  command-brief (full width, h=9)
+//  y= 9  cross-asset   (full width, h=5)
+//  y=14  event-calendar (w=7) | alerts (w=5)
+//  y=22  fed (w=3) | treasury (w=3) | macro (w=3) | liquidity (w=3)
+//  y=30  breadth (w=4) | watchlist (w=5) | flows (w=3)
+//  y=39  options (w=7) | internals (w=5)
+//  y=49  retail-organic (w=8) | collar (w=4)
+// ============================================================
 export const DEFAULT_LAYOUT_LG: Layout = applyConstraints([
-  item('command-brief', 0, 0, 12, 9, { minH: 6 }),
-  item('alerts',        0, 9, 12, 3, { minH: 2 }),
-  item('watchlist',     0, 12, 12, 7, { minH: 4 }),
-  item('fed',           0, 19, 4, 8),
-  item('treasury',      4, 19, 4, 8),
-  item('macro',         8, 19, 4, 8),
-  item('liquidity',     0, 27, 5, 9),
-  item('breadth',       5, 27, 7, 9),
-  item('options',       0, 36, 7, 10),
-  item('flows',         7, 36, 5, 8),
-  item('internals',     0, 46, 12, 6, { minH: 4 }),
-  item('retail-organic',0, 52, 8, 9),
-  item('collar',        8, 52, 4, 8),
+  item('command-brief',  0,  0, 12, 9, { minH: 6 }),
+  item('cross-asset',    0,  9, 12, 5),
+  item('event-calendar', 0, 14,  7, 8),
+  item('alerts',         7, 14,  5, 8, { minH: 2 }),
+  item('fed',            0, 22,  3, 8),
+  item('treasury',       3, 22,  3, 8),
+  item('macro',          6, 22,  3, 8),
+  item('liquidity',      9, 22,  3, 8),
+  item('breadth',        0, 30,  4, 9),
+  item('watchlist',      4, 30,  5, 9, { minH: 4 }),
+  item('flows',          9, 30,  3, 9),
+  item('options',        0, 39,  7, 10),
+  item('internals',      7, 39,  5,  6, { minH: 4 }),
+  item('retail-organic', 0, 49,  8,  9),
+  item('collar',         8, 49,  4,  8),
 ])
 
-/** Laptop / tablet — 10 columns */
+// ============================================================
+// LAPTOP / TABLET — 10 columns
+//
+//  y= 0  command-brief (full width, h=9)
+//  y= 9  cross-asset   (full width, h=5)
+//  y=14  event-calendar (w=6) | alerts (w=4)
+//  y=22  fed (w=5) | treasury (w=5)
+//  y=30  macro (w=5) | liquidity (w=5)
+//  y=38  breadth (w=6) | watchlist (w=4)
+//  y=47  flows (full width, h=7)
+//  y=54  options (w=6) | internals (w=4)
+//  y=63  retail-organic (w=7) | collar (w=3)
+// ============================================================
 export const DEFAULT_LAYOUT_MD: Layout = applyConstraints([
-  item('command-brief', 0, 0, 10, 9, { minH: 6 }),
-  item('alerts',        0, 9, 10, 3, { minH: 2 }),
-  item('watchlist',     0, 12, 10, 7, { minH: 4 }),
-  item('fed',           0, 19, 5, 8),
-  item('treasury',      5, 19, 5, 8),
-  item('macro',         0, 27, 10, 6),
-  item('liquidity',     0, 33, 5, 9),
-  item('breadth',       5, 33, 5, 9),
-  item('options',       0, 42, 6, 9),
-  item('flows',         6, 42, 4, 8),
-  item('internals',     0, 50, 10, 5, { minH: 3 }),
-  item('retail-organic',0, 55, 10, 8),
-  item('collar',        0, 63, 10, 6),
+  item('command-brief',  0,  0, 10, 9, { minH: 6 }),
+  item('cross-asset',    0,  9, 10, 5),
+  item('event-calendar', 0, 14,  6, 8),
+  item('alerts',         6, 14,  4, 8, { minH: 2 }),
+  item('fed',            0, 22,  5, 8),
+  item('treasury',       5, 22,  5, 8),
+  item('macro',          0, 30,  5, 8),
+  item('liquidity',      5, 30,  5, 8),
+  item('breadth',        0, 38,  6, 9),
+  item('watchlist',      6, 38,  4, 9, { minH: 4 }),
+  item('flows',          0, 47, 10, 7),
+  item('options',        0, 54,  6, 9),
+  item('internals',      6, 54,  4, 6, { minH: 3 }),
+  item('retail-organic', 0, 63,  7, 8),
+  item('collar',         7, 63,  3, 8),
 ])
 
-/** Small tablet — 6 columns */
+// ============================================================
+// SMALL TABLET — 6 columns (mostly stacked)
+//
+//  Stacks in canonical order; event-calendar + alerts stay paired.
+// ============================================================
 export const DEFAULT_LAYOUT_SM: Layout = applyConstraints([
-  item('command-brief', 0, 0, 6, 10, { minH: 6 }),
-  item('alerts',        0, 10, 6, 3, { minH: 2 }),
-  item('watchlist',     0, 13, 6, 8, { minH: 4 }),
-  item('fed',           0, 21, 6, 7),
-  item('treasury',      0, 28, 6, 7),
-  item('macro',         0, 35, 6, 7),
-  item('liquidity',     0, 42, 6, 8),
-  item('breadth',       0, 50, 6, 9),
-  item('options',       0, 59, 6, 9),
-  item('flows',         0, 68, 6, 7),
-  item('internals',     0, 75, 6, 5, { minH: 3 }),
-  item('retail-organic',0, 80, 6, 9),
-  item('collar',        0, 89, 6, 7),
+  item('command-brief',  0,   0, 6, 10, { minH: 6 }),
+  item('cross-asset',    0,  10, 6,  5),
+  item('event-calendar', 0,  15, 6,  8),
+  item('alerts',         0,  23, 6,  4, { minH: 2 }),
+  item('fed',            0,  27, 6,  7),
+  item('treasury',       0,  34, 6,  7),
+  item('macro',          0,  41, 6,  7),
+  item('liquidity',      0,  48, 6,  7),
+  item('breadth',        0,  55, 6,  9),
+  item('watchlist',      0,  64, 6,  8, { minH: 4 }),
+  item('flows',          0,  72, 6,  7),
+  item('options',        0,  79, 6,  9),
+  item('internals',      0,  88, 6,  5, { minH: 3 }),
+  item('retail-organic', 0,  93, 6,  9),
+  item('collar',         0, 102, 6,  7),
 ])
 
-/** Narrow — 4 columns, stacked */
-export const DEFAULT_LAYOUT_XS_SIMPLE: Layout = applyConstraints([
-  item('command-brief', 0, 0, 4, 11, { minH: 6 }),
-  item('alerts',        0, 11, 4, 3, { minH: 2 }),
-  item('watchlist',     0, 14, 4, 9, { minH: 4 }),
-  item('fed',           0, 23, 4, 8),
-  item('treasury',      0, 31, 4, 8),
-  item('macro',         0, 39, 4, 8),
-  item('liquidity',     0, 47, 4, 8),
-  item('breadth',       0, 55, 4, 10),
-  item('options',       0, 65, 4, 10),
-  item('flows',         0, 75, 4, 7),
-  item('internals',     0, 82, 4, 5, { minH: 3 }),
-  item('retail-organic',0, 87, 4, 10),
-  item('collar',        0, 97, 4, 7),
+// ============================================================
+// NARROW — 4 columns, stacked
+// ============================================================
+export const DEFAULT_LAYOUT_XS: Layout = applyConstraints([
+  item('command-brief',  0,   0, 4, 11, { minH: 6 }),
+  item('cross-asset',    0,  11, 4,  5),
+  item('event-calendar', 0,  16, 4,  8),
+  item('alerts',         0,  24, 4,  3, { minH: 2 }),
+  item('fed',            0,  27, 4,  8),
+  item('treasury',       0,  35, 4,  8),
+  item('macro',          0,  43, 4,  8),
+  item('liquidity',      0,  51, 4,  8),
+  item('breadth',        0,  59, 4, 10),
+  item('watchlist',      0,  69, 4,  9, { minH: 4 }),
+  item('flows',          0,  78, 4,  7),
+  item('options',        0,  85, 4, 10),
+  item('internals',      0,  95, 4,  5, { minH: 3 }),
+  item('retail-organic', 0, 100, 4, 10),
+  item('collar',         0, 110, 4,  7),
 ])
 
 export const DEFAULT_LAYOUT_XXS: Layout = applyConstraints(
-  DEFAULT_LAYOUT_XS_SIMPLE.map(li => ({ ...li, w: 2, x: 0 })),
+  DEFAULT_LAYOUT_XS.map(li => ({ ...li, w: 2, x: 0 })),
 )
 
 export const DEFAULT_LAYOUTS: ResponsiveLayouts = {
   lg:  DEFAULT_LAYOUT_LG,
   md:  DEFAULT_LAYOUT_MD,
   sm:  DEFAULT_LAYOUT_SM,
-  xs:  DEFAULT_LAYOUT_XS_SIMPLE,
+  xs:  DEFAULT_LAYOUT_XS,
   xxs: DEFAULT_LAYOUT_XXS,
 }
 
@@ -164,34 +227,38 @@ export const GRID_ROW_HEIGHT = 36
 export const GRID_MARGIN: [number, number] = [10, 10]
 
 export const HASH_BY_CARD: Record<DashboardCardId, string> = {
-  'command-brief': 'overview',
-  alerts:          'alerts',
-  watchlist:       'watchlist',
-  fed:             'fed',
-  treasury:        'rates',
-  macro:           'macro',
-  liquidity:       'liquidity',
-  breadth:         'breadth',
-  options:         'options',
-  flows:           'flows',
-  internals:       'internals',
-  'retail-organic':'retail-organic',
-  collar:          'collar',
+  'command-brief':  'overview',
+  'cross-asset':    'cross-asset',
+  'event-calendar': 'calendar',
+  alerts:           'alerts',
+  fed:              'fed',
+  treasury:         'rates',
+  macro:            'macro',
+  liquidity:        'liquidity',
+  breadth:          'breadth',
+  watchlist:        'watchlist',
+  flows:            'flows',
+  options:          'options',
+  internals:        'internals',
+  'retail-organic': 'retail-organic',
+  collar:           'collar',
 }
 
 /** Short labels for collapsed strip + toolbar */
 export const CARD_LABELS: Record<DashboardCardId, string> = {
-  'command-brief': 'Command brief',
-  alerts:          'Threat board',
-  watchlist:       'Watchlist',
-  fed:             'Fed / policy',
-  treasury:        'Treasury / rates',
-  macro:           'Macro',
-  liquidity:       'Liquidity',
-  breadth:         'Breadth',
-  options:         'Options',
-  flows:           'Flows',
-  internals:       'Daily internals',
-  'retail-organic':'Retail & organic',
-  collar:          'Collar / structure',
+  'command-brief':  'Command brief',
+  'cross-asset':    'Cross-asset tape',
+  'event-calendar': 'Event calendar',
+  alerts:           'Threat board',
+  fed:              'Fed / policy',
+  treasury:         'Treasury / rates',
+  macro:            'Macro',
+  liquidity:        'Liquidity',
+  breadth:          'Breadth',
+  watchlist:        'Watchlist',
+  flows:            'Flows',
+  options:          'Options',
+  internals:        'Daily internals',
+  'retail-organic': 'Retail & organic',
+  collar:           'Collar / structure',
 }

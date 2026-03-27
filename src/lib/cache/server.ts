@@ -46,6 +46,37 @@ class InProcessCache {
     return { data, fromCache: false, cachedAt: new Date().toISOString() }
   }
 
+  /**
+   * On fetcher failure, returns last cached value (even if TTL-expired) when present.
+   */
+  async getOrFetchWithStaleFallback<T>(
+    key:     string,
+    ttlMs:   number,
+    fetcher: () => Promise<T>,
+  ): Promise<{
+    data:         T
+    fromCache:    boolean
+    cachedAt:     string
+    servedStale:  boolean
+  }> {
+    try {
+      const r = await this.getOrFetch(key, ttlMs, fetcher)
+      return { ...r, servedStale: false }
+    } catch (e) {
+      const stale = this.get<T>(key)
+      if (stale) {
+        console.warn(`[serverCache] ${key} fetch failed — serving stale entry (${Math.round(stale.ageMs / 1000)}s old)`, e)
+        return {
+          data:        stale.data,
+          fromCache:   true,
+          cachedAt:    new Date(Date.now() - stale.ageMs).toISOString(),
+          servedStale: true,
+        }
+      }
+      throw e
+    }
+  }
+
   invalidate(key: string): void {
     this.store.delete(key)
   }
@@ -76,7 +107,13 @@ export const serverCache = new InProcessCache()
 
 export const TTL = {
   // Layer 1: Market data — prices, quotes, breadth
-  MARKET_PRICES:      60_000,    // 1 minute
+  /** Core quote batch (indices, ETFs, cross-asset) — short TTL, cache-heavy */
+  MARKET_QUOTES:      25_000,
+  /** Yahoo chart history rows reused for sparklines */
+  YAHOO_HISTORY:      600_000,   // 10 minutes
+  /** Precomputed watchlist + cross-asset spark bundle */
+  SPARKLINE_BUNDLE:   480_000,   // 8 minutes
+  MARKET_PRICES:      60_000,    // legacy alias for full module (avoid for new code)
   INTRADAY_BREADTH:   60_000,
 
   // Layer 2: Derived analytics
@@ -105,12 +142,18 @@ export const CacheKeys = {
   yahooQuote:     (sym: string) => `yahoo:quote:${sym}`,
   yahooHistory:   (sym: string, range: string) => `yahoo:history:${sym}:${range}`,
   yahooQuotes:    (syms: string[]) => `yahoo:quotes:${syms.sort().join(',')}`,
+  /** Server bundle: keyed by sorted yahoo symbols for sparkline arrays */
+  sparklineBundle:(syms: string[]) => `dashboard:sparklines:${syms.join(',')}`,
   dashboard:      () => 'dashboard:state',
   fedModule:      () => 'module:fed',
   treasuryModule: () => 'module:treasury',
   macroModule:    () => 'module:macro',
   liquidityModule:() => 'module:liquidity',
   marketModule:   () => 'module:market',
+  /** Polygon I:SPX option chain snapshot (paginated fetch, cached body) */
+  polygonOptionsSnapshot: () => 'polygon:options:snapshot:I:SPX',
+  /** Yahoo options chain (cooldown + stale fallback on error) */
+  yahooOptionsChain: () => 'yahoo:options:chain:v6',
   aiExplain:      (module: string, hash: string) => `ai:explain:${module}:${hash}`,
   aiSummary:      (hash: string) => `ai:summary:${hash}`,
 } as const

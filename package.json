@@ -3,9 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --port 4040",
+    "dev": "node scripts/next-with-default-port.mjs dev",
     "build": "next build",
-    "start": "next start --port 4040",
+    "start": "node scripts/next-with-default-port.mjs start",
     "lint": "next lint",
     "type-check": "tsc --noEmit",
     "test": "vitest run"
@@ -27,6 +27,7 @@
     "swr": "^2.2.5",
     "tailwindcss": "^3.4.0",
     "typescript": "^5.4.0",
+    "yahoo-finance2": "^3.14.0",
     "zustand": "^4.5.2"
   },
   "devDependencies": {

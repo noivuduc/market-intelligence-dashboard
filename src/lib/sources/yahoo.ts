@@ -1,54 +1,38 @@
 // ============================================================
-// YAHOO FINANCE ADAPTER (UNOFFICIAL)
-// Proxied through Next.js API routes to avoid CORS.
-// No API key required. 15-minute delay for non-premium users.
-//
-// WARNING: This is an unofficial API. Structure may change.
-// Replace with Polygon.io or similar for production.
-//
-// This module runs SERVER-SIDE ONLY.
+// YAHOO FINANCE (via yahoo-finance2, unofficial)
+// Server-side only. Handles cookies/crumbs like the Yahoo site.
+// Replace with Polygon.io or similar for production if needed.
 // ============================================================
 
-const YF_BASE_V8 = 'https://query1.finance.yahoo.com/v8/finance/chart'
-const YF_BASE_V7 = 'https://query1.finance.yahoo.com/v7/finance/quote'
+import { singleFlight } from '@/lib/util/singleFlight'
+import { getYahooChartCircuitBreaker } from '@/lib/sources/yahoo-circuit'
+import { getYahooChartMinuteBudget, BudgetExceededError } from '@/lib/sources/yahoo-budget'
+import {
+  getYahooFinance2,
+  yahooFinance2HttpStatus,
+} from '@/lib/sources/yahoo-finance-instance'
 
-// ---- Types ----
-
-export interface YFMeta {
-  symbol:                    string
-  currency:                  string
-  regularMarketPrice:        number
-  regularMarketPreviousClose:number
-  regularMarketOpen:         number
-  regularMarketDayHigh:      number
-  regularMarketDayLow:       number
-  regularMarketVolume:       number
-  fiftyTwoWeekHigh:          number
-  fiftyTwoWeekLow:           number
-  regularMarketTime:         number   // Unix timestamp
-  exchangeTimezoneName:      string
-  shortName?:                string
+function sleep(ms: number): Promise<void> {
+  return new Promise(r => setTimeout(r, ms))
 }
 
-export interface YFChartResult {
-  meta:       YFMeta
-  timestamp:  number[]
-  indicators: {
-    quote: {
-      open:   (number | null)[]
-      high:   (number | null)[]
-      low:    (number | null)[]
-      close:  (number | null)[]
-      volume: (number | null)[]
-    }[]
+const YF2_MODULE = { validateResult: false as const }
+
+/**
+ * Yahoo chart traffic is capped in **batches** so `/api/dashboard` does not open
+ * ~50 parallel chart requests (quotes + sparkline history), which triggers **HTTP 429**.
+ * Options (`yahoo-options.ts`) use separate `YAHOO_OPTIONS_*` env vars.
+ */
+export function getYahooChartThrottle(): { maxConcurrent: number; gapMs: number } {
+  return {
+    maxConcurrent: Math.max(1, Math.min(24, Number(process.env.YAHOO_MAX_CONCURRENT ?? '10') || 10)),
+    gapMs:         Math.max(0, Math.min(3000, Number(process.env.YAHOO_CHART_GAP_MS ?? '50') || 50)),
   }
 }
 
-export interface YFChartResponse {
-  chart: {
-    result:  YFChartResult[] | null
-    error:   { code: string; description: string } | null
-  }
+export async function pauseYahooChartThrottle(): Promise<void> {
+  const { gapMs } = getYahooChartThrottle()
+  if (gapMs > 0) await sleep(gapMs)
 }
 
 // ---- Normalized quote ----
@@ -67,65 +51,81 @@ export interface NormalizedQuote {
   volume:        number
   high52w:       number
   low52w:        number
-  asOf:          string   // ISO from unix timestamp
+  asOf:          string   // ISO
+}
+
+function finiteOr(v: unknown, fallback: number): number {
+  return typeof v === 'number' && Number.isFinite(v) ? v : fallback
+}
+
+function quoteAsOfIso(t: unknown): string {
+  if (t instanceof Date && !Number.isNaN(t.getTime())) return t.toISOString()
+  if (typeof t === 'number' && Number.isFinite(t)) {
+    const ms = t > 1e12 ? t : t * 1000
+    return new Date(ms).toISOString()
+  }
+  return new Date().toISOString()
 }
 
 // ---- Fetch single symbol ----
 
-export async function fetchQuote(symbol: string): Promise<NormalizedQuote> {
-  const encoded = encodeURIComponent(symbol)
-  const url = `${YF_BASE_V8}/${encoded}?interval=1d&range=5d&includePrePost=false`
+async function fetchQuoteInner(symbol: string): Promise<NormalizedQuote> {
+  const br = getYahooChartCircuitBreaker()
+  br.assertClosed()
+  const budget = getYahooChartMinuteBudget()
+  if (!budget.tryConsume(1)) throw new BudgetExceededError()
 
-  const res = await fetch(url, {
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (compatible; MarketIntel/1.0)',
-      'Accept':     'application/json',
-    },
-    next: { revalidate: 60 },
-  })
-
-  if (!res.ok) {
-    throw new Error(`Yahoo Finance [${symbol}] HTTP ${res.status}`)
+  const yf = getYahooFinance2()
+  let q: Record<string, unknown>
+  try {
+    q = (await yf.quote(symbol, undefined, YF2_MODULE)) as Record<string, unknown>
+    br.observeHttpStatus(200)
+  } catch (e) {
+    const st = yahooFinance2HttpStatus(e)
+    if (st != null) br.observeHttpStatus(st)
+    throw e instanceof Error ? e : new Error(String(e))
   }
 
-  const body: YFChartResponse = await res.json()
-
-  if (body.chart.error) {
-    throw new Error(`Yahoo Finance [${symbol}]: ${body.chart.error.description}`)
+  if (q == null || typeof q !== 'object') {
+    throw new Error(`Yahoo Finance [${symbol}]: no result`)
   }
 
-  const result = body.chart.result?.[0]
-  if (!result) throw new Error(`Yahoo Finance [${symbol}]: no result`)
+  const price = finiteOr(q.regularMarketPrice, NaN)
+  const prev = finiteOr(q.regularMarketPreviousClose, NaN)
+  if (!Number.isFinite(price) || !Number.isFinite(prev)) {
+    throw new Error(`Yahoo Finance [${symbol}]: missing price fields`)
+  }
 
-  const { meta } = result
-  const price = meta.regularMarketPrice
-  const prev  = meta.regularMarketPreviousClose
   let change: number | null = null
   let changePct: number | null = null
-  if (
-    price != null && prev != null &&
-    Number.isFinite(price) && Number.isFinite(prev) &&
-    prev !== 0
-  ) {
+  if (prev !== 0) {
     change = price - prev
     changePct = ((price - prev) / Math.abs(prev)) * 100
   }
 
+  const sym = typeof q.symbol === 'string' && q.symbol.length > 0 ? q.symbol : symbol
+  const name =
+    typeof q.shortName === 'string' && q.shortName.length > 0 ? q.shortName : sym
+
   return {
-    symbol:        meta.symbol,
-    name:          meta.shortName ?? meta.symbol,
+    symbol:        sym,
+    name,
     price,
     previousClose: prev,
     change,
     changePct,
-    open:    meta.regularMarketOpen,
-    high:    meta.regularMarketDayHigh,
-    low:     meta.regularMarketDayLow,
-    volume:  meta.regularMarketVolume,
-    high52w: meta.fiftyTwoWeekHigh,
-    low52w:  meta.fiftyTwoWeekLow,
-    asOf:    new Date(meta.regularMarketTime * 1000).toISOString(),
+    open:    finiteOr(q.regularMarketOpen, 0),
+    high:    finiteOr(q.regularMarketDayHigh, 0),
+    low:     finiteOr(q.regularMarketDayLow, 0),
+    volume:  finiteOr(q.regularMarketVolume, 0),
+    high52w: finiteOr(q.fiftyTwoWeekHigh, 0),
+    low52w:  finiteOr(q.fiftyTwoWeekLow, 0),
+    asOf:    quoteAsOfIso(q.regularMarketTime),
   }
+}
+
+export function fetchQuote(symbol: string): Promise<NormalizedQuote> {
+  return singleFlight(`yahoo:yf2:quote:${symbol}`, () => fetchQuoteInner(symbol))
 }
 
 // ---- Fetch OHLCV history ----
@@ -139,37 +139,74 @@ export interface OHLCVBar {
   volume: number | null
 }
 
-export async function fetchHistory(
+const RANGE_MS: Record<'5d' | '1mo' | '3mo' | '6mo' | '1y' | '2y', number> = {
+  '5d':  5 * 86_400_000,
+  '1mo': 30 * 86_400_000,
+  '3mo': 90 * 86_400_000,
+  '6mo': 182 * 86_400_000,
+  '1y':  365 * 86_400_000,
+  '2y':  730 * 86_400_000,
+}
+
+async function fetchHistoryInner(
+  symbol:   string,
+  range:    '5d' | '1mo' | '3mo' | '6mo' | '1y' | '2y',
+  interval: '1d' | '1wk' | '1mo',
+): Promise<OHLCVBar[]> {
+  const br = getYahooChartCircuitBreaker()
+  br.assertClosed()
+  const budget = getYahooChartMinuteBudget()
+  if (!budget.tryConsume(1)) throw new BudgetExceededError()
+
+  const period2 = new Date()
+  const period1 = new Date(period2.getTime() - RANGE_MS[range] - 1000)
+
+  const yf = getYahooFinance2()
+  let chart: { quotes?: Array<{
+    date: Date | string
+    open: number | null
+    high: number | null
+    low: number | null
+    close: number | null
+    volume: number | null
+  }> }
+  try {
+    chart = (await yf.chart(
+      symbol,
+      { period1, period2, interval, includePrePost: false },
+      YF2_MODULE,
+    )) as typeof chart
+    br.observeHttpStatus(200)
+  } catch (e) {
+    const st = yahooFinance2HttpStatus(e)
+    if (st != null) br.observeHttpStatus(st)
+    throw e instanceof Error ? e : new Error(String(e))
+  }
+
+  const quotes = chart.quotes
+  if (!quotes?.length) return []
+
+  return quotes.map(row => ({
+    date:   row.date instanceof Date
+      ? row.date.toISOString().split('T')[0]!
+      : String(row.date),
+    open:   row.open   ?? null,
+    high:   row.high   ?? null,
+    low:    row.low    ?? null,
+    close:  row.close  ?? null,
+    volume: row.volume ?? null,
+  }))
+}
+
+export function fetchHistory(
   symbol:   string,
   range:    '5d' | '1mo' | '3mo' | '6mo' | '1y' | '2y' = '3mo',
   interval: '1d' | '1wk' | '1mo' = '1d',
 ): Promise<OHLCVBar[]> {
-  const encoded = encodeURIComponent(symbol)
-  const url = `${YF_BASE_V8}/${encoded}?interval=${interval}&range=${range}&includePrePost=false`
-
-  const res = await fetch(url, {
-    headers: { 'User-Agent': 'Mozilla/5.0 (compatible; MarketIntel/1.0)' },
-    next: { revalidate: 3600 },
-  })
-
-  if (!res.ok) throw new Error(`Yahoo Finance history [${symbol}] HTTP ${res.status}`)
-
-  const body: YFChartResponse = await res.json()
-  const result = body.chart.result?.[0]
-  if (!result) return []
-
-  const { timestamp, indicators } = result
-  const q = indicators.quote[0]
-  if (!q || !timestamp) return []
-
-  return timestamp.map((ts, i) => ({
-    date:   new Date(ts * 1000).toISOString().split('T')[0]!,
-    open:   q.open[i]   ?? null,
-    high:   q.high[i]   ?? null,
-    low:    q.low[i]    ?? null,
-    close:  q.close[i]  ?? null,
-    volume: q.volume[i] ?? null,
-  }))
+  return singleFlight(
+    `yahoo:yf2:hist:${symbol}:${range}:${interval}`,
+    () => fetchHistoryInner(symbol, range, interval),
+  )
 }
 
 // ---- Batch quotes ----
@@ -177,70 +214,25 @@ export async function fetchHistory(
 export async function fetchQuotes(
   symbols: string[],
 ): Promise<{ symbol: string; quote: NormalizedQuote | null; error: string | null }[]> {
-  const results = await Promise.allSettled(
-    symbols.map(s => fetchQuote(s))
-  )
-  return results.map((r, i) => ({
-    symbol: symbols[i]!,
-    quote:  r.status === 'fulfilled' ? r.value : null,
-    error:  r.status === 'rejected'  ? String(r.reason) : null,
-  }))
+  const { maxConcurrent } = getYahooChartThrottle()
+  const out: { symbol: string; quote: NormalizedQuote | null; error: string | null }[] = []
+
+  for (let i = 0; i < symbols.length; i += maxConcurrent) {
+    const slice = symbols.slice(i, i + maxConcurrent)
+    const settled = await Promise.allSettled(slice.map(s => fetchQuote(s)))
+    for (let j = 0; j < slice.length; j++) {
+      const sym = slice[j]!
+      const r = settled[j]!
+      out.push({
+        symbol: sym,
+        quote:  r.status === 'fulfilled' ? r.value : null,
+        error:  r.status === 'rejected'  ? String(r.reason) : null,
+      })
+    }
+    if (i + maxConcurrent < symbols.length) await pauseYahooChartThrottle()
+  }
+
+  return out
 }
 
-// ---- Symbol catalog ----
-// Yahoo Finance symbol format: ^ prefix for indices
-
-export const YF_SYMBOLS = {
-  // Indices
-  SPX:  '^GSPC',
-  NDX:  '^NDX',
-  DJI:  '^DJI',
-  RUT:  '^RUT',
-  VIX:  '^VIX',
-  MOVE: '^MOVE',  // May not be on Yahoo
-
-  // Broad ETFs
-  SPY:  'SPY',
-  QQQ:  'QQQ',
-  IWM:  'IWM',
-  DIA:  'DIA',
-  RSP:  'RSP',   // Equal-weight S&P 500
-  MDY:  'MDY',   // Mid cap
-
-  // Sector ETFs
-  XLK:  'XLK',   // Tech
-  XLC:  'XLC',   // Communication
-  XLF:  'XLF',   // Financials
-  XLV:  'XLV',   // Healthcare
-  XLE:  'XLE',   // Energy
-  XLI:  'XLI',   // Industrials
-  XLB:  'XLB',   // Materials
-  XLRE: 'XLRE',  // Real Estate
-  XLU:  'XLU',   // Utilities
-  XLP:  'XLP',   // Staples
-  XLY:  'XLY',   // Discretionary
-
-  // Fixed income
-  TLT:  'TLT',   // 20Y Treasury
-  IEF:  'IEF',   // 7-10Y Treasury
-  SHY:  'SHY',   // 1-3Y Treasury
-  HYG:  'HYG',   // HY corp bonds
-  LQD:  'LQD',   // IG corp bonds
-  BND:  'BND',   // Total bond
-
-  // Commodities / safe havens
-  GLD:  'GLD',
-  SLV:  'SLV',
-  USO:  'USO',
-  BTC:  'BTC-USD',
-  GOLD_FUT: 'GC=F',
-  OIL_FUT:  'CL=F',
-  DXY:  'DX-Y.NYB',
-  US10Y: '^TNX',
-
-  // Vol
-  SVXY: 'SVXY',
-  UVXY: 'UVXY',
-} as const
-
-export type YFSymbol = typeof YF_SYMBOLS[keyof typeof YF_SYMBOLS]
+export { YF_SYMBOLS, type YFSymbol } from '@/lib/sources/yahoo-symbols'

@@ -16,7 +16,7 @@ function minimalPacket(label: RegimeLabel, confidence: number): RegimeSummaryPac
       lastUpdated: new Date().toISOString(),
     },
     asOf: new Date().toISOString(),
-  } as RegimeSummaryPacket
+  } as unknown as RegimeSummaryPacket
 }
 
 describe('regimeSummaryPacketCacheKey', () => {

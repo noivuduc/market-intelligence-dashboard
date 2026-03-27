@@ -6,7 +6,7 @@
 // ============================================================
 
 import { NextResponse } from 'next/server'
-import { buildMarketSnapshot } from '@/lib/features/market'
+import { buildMarketCoreSnapshot } from '@/lib/features/market'
 import { serverCache, CacheKeys, TTL } from '@/lib/cache/server'
 
 export const dynamic = 'force-dynamic'
@@ -16,8 +16,8 @@ export async function GET() {
   try {
     const { data, fromCache, cachedAt } = await serverCache.getOrFetch(
       CacheKeys.marketModule(),
-      TTL.MARKET_PRICES,
-      () => buildMarketSnapshot(),
+      TTL.MARKET_QUOTES,
+      () => buildMarketCoreSnapshot(),
     )
 
     return NextResponse.json(data, {

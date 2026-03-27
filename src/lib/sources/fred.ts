@@ -9,6 +9,15 @@
 
 const FRED_BASE = 'https://api.stlouisfed.org/fred'
 
+function sleep(ms: number): Promise<void> {
+  return new Promise(r => setTimeout(r, ms))
+}
+
+function isTransientFredError(err: unknown): boolean {
+  const s = err instanceof Error ? err.message : String(err)
+  return /\bHTTP (502|503|504|429)\b/.test(s)
+}
+
 // ---- Raw FRED types ----
 
 export interface FREDObservation {
@@ -42,10 +51,10 @@ function requireApiKey(): string {
   return key
 }
 
-export async function fetchSeries(
-  seriesId:  string,
-  limit = 20,
-  order:     'asc' | 'desc' = 'desc',
+async function fetchSeriesOnce(
+  seriesId: string,
+  limit: number,
+  order: 'asc' | 'desc',
 ): Promise<FREDObservation[]> {
   const key = requireApiKey()
   const url = new URL(`${FRED_BASE}/series/observations`)
@@ -57,16 +66,40 @@ export async function fetchSeries(
 
   const res = await fetch(url.toString(), {
     headers: { 'Accept': 'application/json' },
-    // Next.js fetch cache: revalidate based on data type
-    next: { revalidate: 3600 },
+    cache: 'no-store',   // TTL managed by server cache layer; bypass Next.js data cache
   })
 
   if (!res.ok) {
-    throw new Error(`FRED [${seriesId}] HTTP ${res.status}: ${await res.text().catch(() => '')}`)
+    const body = await res.text().catch(() => '')
+    throw new Error(`FRED [${seriesId}] HTTP ${res.status}: ${body.slice(0, 200)}`)
   }
 
   const body: FREDSeriesResponse = await res.json()
   return body.observations
+}
+
+const FRED_FETCH_ATTEMPTS = Math.max(1, Math.min(6, Number(process.env.FRED_FETCH_ATTEMPTS ?? '3') || 3))
+const FRED_RETRY_BASE_MS = Math.max(100, Math.min(5000, Number(process.env.FRED_RETRY_BASE_MS ?? '400') || 400))
+
+/**
+ * Single FRED series with retries on transient gateway / rate-limit errors.
+ */
+export async function fetchSeries(
+  seriesId:  string,
+  limit = 20,
+  order:     'asc' | 'desc' = 'desc',
+): Promise<FREDObservation[]> {
+  let lastErr: unknown
+  for (let attempt = 1; attempt <= FRED_FETCH_ATTEMPTS; attempt++) {
+    try {
+      return await fetchSeriesOnce(seriesId, limit, order)
+    } catch (e) {
+      lastErr = e
+      if (attempt >= FRED_FETCH_ATTEMPTS || !isTransientFredError(e)) throw e
+      await sleep(FRED_RETRY_BASE_MS * attempt)
+    }
+  }
+  throw lastErr
 }
 
 // ---- Helpers ----
@@ -112,21 +145,45 @@ export function toTimeSeries(obs: FREDObservation[], ascending = true): { date: 
 
 // ---- Batch fetch ----
 
+const FRED_BATCH_CONCURRENCY = Math.max(1, Math.min(16, Number(process.env.FRED_MAX_CONCURRENT ?? '6') || 6))
+const FRED_BATCH_GAP_MS = Math.max(0, Math.min(2000, Number(process.env.FRED_BATCH_GAP_MS ?? '40') || 40))
+
+/**
+ * Fetches many series with capped concurrency per call (reduces St. Louis Fed 502s when
+ * multiple dashboard modules each fire large batches in parallel).
+ */
 export async function fetchMultiple(
   ids: string[],
   limit = 20,
 ): Promise<Record<string, FREDObservation[]>> {
-  const results = await Promise.allSettled(
-    ids.map(id => fetchSeries(id, limit).then(obs => ({ id, obs })))
-  )
   const out: Record<string, FREDObservation[]> = {}
-  for (const r of results) {
-    if (r.status === 'fulfilled') {
-      out[r.value.id] = r.value.obs
-    } else {
-      console.warn(`FRED batch: failed to fetch series — ${r.reason}`)
+  const failed: string[] = []
+
+  for (let i = 0; i < ids.length; i += FRED_BATCH_CONCURRENCY) {
+    const slice = ids.slice(i, i + FRED_BATCH_CONCURRENCY)
+    const settled = await Promise.allSettled(
+      slice.map(id => fetchSeries(id, limit).then(obs => ({ id, obs }))),
+    )
+    for (let j = 0; j < settled.length; j++) {
+      const id = slice[j]!
+      const r = settled[j]!
+      if (r.status === 'fulfilled') {
+        out[r.value.id] = r.value.obs
+      } else {
+        failed.push(id)
+      }
+    }
+    if (i + FRED_BATCH_CONCURRENCY < ids.length && FRED_BATCH_GAP_MS > 0) {
+      await sleep(FRED_BATCH_GAP_MS)
     }
   }
+
+  if (failed.length > 0) {
+    const sample = failed.slice(0, 6).join(', ')
+    const more = failed.length > 6 ? ` (+${failed.length - 6} more)` : ''
+    console.warn(`FRED: ${failed.length} series unavailable after retries (${sample}${more})`)
+  }
+
   return out
 }
 

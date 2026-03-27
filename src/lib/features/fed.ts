@@ -162,8 +162,8 @@ export async function buildFedModule(): Promise<FedPolicyModule> {
   const fomcNote = fomcCoverageCaveat()
   return {
     fedFundsTarget: {
-      lower: lower?.value ?? 5.25,
-      upper: upper?.value ?? 5.50,
+      lower: lower?.value ?? 0,
+      upper: upper?.value ?? 0,
     },
     iorb,
     onRrp,

@@ -6,11 +6,23 @@ import { buildRegimeSummaryPacket } from '@/lib/ai/packets'
 import { regimeSummaryPacketCacheKey } from '@/lib/ai/summaryPacketHash'
 import { TopBar }              from '@/components/layout/TopBar'
 import { DataQualityBanner }   from '@/components/ui/DataQualityBanner'
-import { CrossAssetStrip }     from '@/components/command/CrossAssetStrip'
 import type { SitrepSource }   from '@/components/command/CommandBriefHero'
 import { DashboardDeck }       from '@/components/dashboard/DashboardDeck'
+import { applyOptionsLane, applySparklineLane } from '@/lib/dashboard/client-merge'
+import {
+  fetchCoalescedAiSummary,
+  fetchCoalescedDashboardCore,
+  fetchCoalescedDashboardOptions,
+  fetchCoalescedDashboardSparklines,
+} from '@/lib/dashboard/coalesced-dashboard-fetches'
 
 const MARKET_REFRESH_MS = 60_000 // Layer 1: prices
+
+/** Defer options lane after core paint so Yahoo chart burst finishes before v7/options */
+const OPTIONS_LANE_DEFER_MS = (() => {
+  const n = Number(process.env.NEXT_PUBLIC_OPTIONS_LANE_DEFER_MS)
+  return Number.isFinite(n) && n >= 0 ? n : 800
+})()
 
 /** Layer 3: AI poll — default 30m; set NEXT_PUBLIC_AI_REFRESH_MS (milliseconds) to override */
 const AI_REFRESH_MS = (() => {
@@ -19,16 +31,20 @@ const AI_REFRESH_MS = (() => {
 })()
 
 export default function DashboardPage() {
-  const [state,    setState]    = useState<DashboardState | null>(null)
-  const [briefing, setBriefing] = useState<TopLevelBriefing | null>(null)
-  const [aiBriefError, setAiBriefError] = useState<string | null>(null)
-  const [loading,  setLoading]  = useState(true)
-  const [error,    setError]    = useState<string | null>(null)
-  const [lastFetch,setLastFetch]= useState('')
+  const [state,        setState]       = useState<DashboardState | null>(null)
+  const [briefing,     setBriefing]    = useState<TopLevelBriefing | null>(null)
+  const [aiBriefError, setAiBriefError]= useState<string | null>(null)
+  const [loading,      setLoading]     = useState(true)
+  const [error,        setError]       = useState<string | null>(null)
+  const [lastFetch,    setLastFetch]   = useState('')
+  /** True only during background polls — never set during initial load so skeleton shows instead. */
+  const [isRefreshing, setIsRefreshing]= useState(false)
   const aiRefreshRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const stateRef = useRef<DashboardState | null>(null)
   const briefingRef = useRef<TopLevelBriefing | null>(null)
   const lastAiPacketKeyRef = useRef<string | null>(null)
+  /** Tracks regime label across effect runs; `undefined` = first run for this mount (Strict Mode resets refs). */
+  const prevAiRegimeLabelRef = useRef<string | undefined>(undefined)
 
   useEffect(() => {
     stateRef.current = state
@@ -38,21 +54,64 @@ export default function DashboardPage() {
     briefingRef.current = briefing
   }, [briefing])
 
-  // ---- Fetch market data ----
-  const fetchData = useCallback(async () => {
+  /**
+   * Core → sparklines. `bypassDedupe: false` (initial load) avoids a second HTTP call
+   * when Strict Mode remounts after the first response (micro-cache + singleFlight).
+   * `bypassDedupe: true` for 60s poll and manual retry — always hit the network.
+   */
+  const refreshDashboardLanes = useCallback(async (opts?: { bypassDedupe?: boolean }) => {
+    const bypass = opts?.bypassDedupe === true
+    // Flag background refreshes (state already has data) so the deck can show a
+    // subtle SYNCING badge instead of blanking cards.
+    const isSubsequent = stateRef.current !== null
+    if (isSubsequent) setIsRefreshing(true)
     try {
-      const res = await fetch('/api/dashboard')
-      if (!res.ok) throw new Error(`API ${res.status}`)
-      const data: DashboardState = await res.json()
-      setState(data)
+      const data = await fetchCoalescedDashboardCore({ bypassDedupe: bypass })
+      // Merge with previous good state to prevent cards from flashing when an
+      // individual module temporarily degrades (e.g. options 429 → placeholder).
+      setState((prev) => {
+        if (!prev) return data
+        // Preserve a live options structure if the new core response has a placeholder.
+        const nextOptions =
+          prev.options.structureAvailable && !data.options.structureAvailable
+            ? prev.options
+            : data.options
+        return nextOptions === data.options ? data : { ...data, options: nextOptions }
+      })
       setLastFetch(new Date().toISOString())
       setError(null)
+
+      void fetchCoalescedDashboardSparklines({ bypassDedupe: bypass })
+        .then((sparklines) => {
+          setState((s) => (s ? applySparklineLane(s, sparklines) : null))
+        })
+        .catch(() => {})
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Fetch failed')
+      // On poll failure: keep previous data visible; only surface error on initial load.
+      if (!isSubsequent) setError(e instanceof Error ? e.message : 'Fetch failed')
     } finally {
       setLoading(false)
+      if (isSubsequent) setIsRefreshing(false)
     }
   }, [])
+
+  /** Deferred options lane; return timeout id for cleanup between interval ticks. */
+  const scheduleOptionsLane = useCallback((bypassDedupe: boolean): number => {
+    return window.setTimeout(() => {
+      void fetchCoalescedDashboardOptions({ bypassDedupe })
+        .then((o) => {
+          if (!o) return
+          setState((s) => (s ? applyOptionsLane(s, o) : null))
+        })
+        .catch(() => {})
+    }, OPTIONS_LANE_DEFER_MS)
+  }, [])
+
+  /** Manual retry — always bypass client micro-cache */
+  const fetchData = useCallback(async () => {
+    await refreshDashboardLanes({ bypassDedupe: true })
+    scheduleOptionsLane(true)
+  }, [refreshDashboardLanes, scheduleOptionsLane])
 
   /**
    * Executive AI brief — skips HTTP entirely when regime fingerprint matches last success
@@ -88,27 +147,7 @@ export default function DashboardPage() {
 
     setAiBriefError(null)
     try {
-      const res = await fetch('/api/ai/summary', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ packet }),
-      })
-      const body: unknown = await res.json().catch(() => ({}))
-      if (!res.ok) {
-        const msg =
-          typeof body === 'object' && body !== null && 'error' in body && typeof (body as { error: unknown }).error === 'string'
-            ? (body as { error: string }).error
-            : `HTTP ${res.status}`
-        setAiBriefError(msg)
-        console.warn('[AI summary]', msg)
-        return
-      }
-      const brief = body as TopLevelBriefing
-      if (typeof brief?.fullBrief !== 'string') {
-        setAiBriefError('Invalid response from /api/ai/summary (expected briefing JSON).')
-        console.warn('[AI summary] missing fullBrief in response', body)
-        return
-      }
+      const brief = await fetchCoalescedAiSummary(fp, packet)
       setBriefing(brief)
       lastAiPacketKeyRef.current = fp
       setAiBriefError(null)
@@ -120,10 +159,29 @@ export default function DashboardPage() {
   }, [])
 
   useEffect(() => {
-    fetchData()
-    const marketTimer = setInterval(fetchData, MARKET_REFRESH_MS)
-    return () => clearInterval(marketTimer)
-  }, [fetchData])
+    let optionsTimeout: number | null = null
+
+    /** Initial mount (incl. Strict Mode remount): allow micro-cache dedupe. */
+    const runInitial = async () => {
+      await refreshDashboardLanes({ bypassDedupe: false })
+      if (optionsTimeout != null) window.clearTimeout(optionsTimeout)
+      optionsTimeout = scheduleOptionsLane(false)
+    }
+
+    /** Timed refresh: must fetch fresh quotes from Yahoo/FRED. */
+    const runPoll = async () => {
+      await refreshDashboardLanes({ bypassDedupe: true })
+      if (optionsTimeout != null) window.clearTimeout(optionsTimeout)
+      optionsTimeout = scheduleOptionsLane(true)
+    }
+
+    void runInitial()
+    const marketTimer = setInterval(runPoll, MARKET_REFRESH_MS)
+    return () => {
+      if (optionsTimeout != null) window.clearTimeout(optionsTimeout)
+      clearInterval(marketTimer)
+    }
+  }, [refreshDashboardLanes, scheduleOptionsLane])
 
   // Hash targets (e.g. /#macro) only exist after dashboard data renders — scroll after load.
   useEffect(() => {
@@ -140,18 +198,33 @@ export default function DashboardPage() {
     return () => window.removeEventListener('hashchange', scrollToHash)
   }, [state])
 
-  // AI: on load + regime label/confidence change (immediate), then poll on interval using latest stateRef
+  // AI: one initial POST after options lane time (stateRef has merged options); immediate refetch only
+  // when regime *label* changes. Never key on confidence — options merge nudges it and doubled /summary.
   useEffect(() => {
     if (!state) return
-    void fetchAISummary({ force: true })
+    const label = state.regime.label
+
+    let initialDelayTimer: number | undefined
+    const prev = prevAiRegimeLabelRef.current
+    if (prev === undefined) {
+      initialDelayTimer = window.setTimeout(() => {
+        void fetchAISummary({ force: false })
+      }, OPTIONS_LANE_DEFER_MS + 500)
+    } else if (prev !== label) {
+      void fetchAISummary({ force: false })
+    }
+    prevAiRegimeLabelRef.current = label
+
     if (aiRefreshRef.current) clearInterval(aiRefreshRef.current)
     aiRefreshRef.current = setInterval(() => {
       void fetchAISummary()
     }, AI_REFRESH_MS)
+
     return () => {
+      if (initialDelayTimer != null) window.clearTimeout(initialDelayTimer)
       if (aiRefreshRef.current) clearInterval(aiRefreshRef.current)
     }
-  }, [state?.regime.label, state?.regime.confidence, fetchAISummary])
+  }, [state?.regime.label, fetchAISummary])
 
   // Merge AI briefing into state for components
   const executive = state ? {
@@ -187,12 +260,6 @@ export default function DashboardPage() {
         {/* Data quality warning */}
         <DataQualityBanner quality={state.dataQuality} />
 
-        {state.crossAsset.length > 0 && (
-          <section className="scroll-mt-16 mb-4" aria-label="Cross-asset">
-            <CrossAssetStrip items={state.crossAsset} />
-          </section>
-        )}
-
         <section className="scroll-mt-16" aria-label="Command grid">
           <DashboardDeck
             state={state}
@@ -201,6 +268,7 @@ export default function DashboardPage() {
             sitrepSource={sitrepSource}
             aiBriefError={aiBriefError}
             lastFetch={lastFetch}
+            isRefreshing={isRefreshing}
           />
         </section>
 

@@ -19,6 +19,8 @@ import { CollarCard } from '@/components/modules/CollarCard'
 import { WatchlistCard } from '@/components/modules/WatchlistCard'
 import { AlertsPanel } from '@/components/modules/AlertsPanel'
 import { Card } from '@/components/ui/Card'
+import { CrossAssetStrip } from '@/components/command/CrossAssetStrip'
+import { EventCalendarCard } from '@/components/modules/EventCalendarCard'
 import {
   CARD_LABELS,
   DEFAULT_LAYOUTS,
@@ -56,6 +58,8 @@ export interface DashboardDeckProps {
   sitrepSource:   SitrepSource
   aiBriefError:   string | null
   lastFetch:      string
+  /** True while a background data poll is in-flight — show subtle SYNCING badge. */
+  isRefreshing?:  boolean
 }
 
 export function DashboardDeck({
@@ -65,6 +69,7 @@ export function DashboardDeck({
   sitrepSource,
   aiBriefError,
   lastFetch,
+  isRefreshing = false,
 }: DashboardDeckProps) {
   const [{ layouts, collapsed, layoutLocked }, setDeck] = useState(DECK_DEFAULT)
   const [editMode, setEditMode] = useState(false)
@@ -148,6 +153,16 @@ export function DashboardDeck({
       layoutLocked: false,
     })
   }, [])
+
+  // Same as reset but keeps lock state — lets user tidy without wiping their lock preference
+  const handleRestoreRecommended = useCallback(() => {
+    clearPersistedLayout()
+    setDeck({
+      layouts: cloneLayouts(DEFAULT_LAYOUTS),
+      collapsed: {},
+      layoutLocked,
+    })
+  }, [layoutLocked])
 
   const handleTidy = useCallback(() => {
     setDeck({
@@ -239,6 +254,12 @@ export function DashboardDeck({
           {savedFlash && (
             <span className="text-[0.6rem] font-mono uppercase text-tac-500">Saved</span>
           )}
+          {/* Subtle background-refresh indicator — never shown on initial load */}
+          {isRefreshing && (
+            <span className="text-[0.6rem] font-mono uppercase tracking-wider text-tac-600/70 px-1.5 py-0.5 border border-tac-900/40 rounded-sm animate-pulse-slow select-none">
+              ⟳ SYNC
+            </span>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {!editMode ? (
@@ -285,15 +306,26 @@ export function DashboardDeck({
                 onClick={handleTidy}
                 disabled={layoutLocked}
                 className="text-2xs font-mono uppercase tracking-wider px-3 py-1.5 rounded-sm border border-ops-600 text-ink-muted hover:text-ink-secondary disabled:opacity-40 transition-colors"
+                title="Snap all cards to their default sizes (preserves positions)"
               >
                 Auto tidy
               </button>
               <button
                 type="button"
+                onClick={handleRestoreRecommended}
+                disabled={layoutLocked}
+                className="text-2xs font-mono uppercase tracking-wider px-3 py-1.5 rounded-sm border border-steel-700 text-steel-400 hover:bg-steel-900/20 disabled:opacity-40 transition-colors"
+                title="Restore canonical module order and positions"
+              >
+                Restore order
+              </button>
+              <button
+                type="button"
                 onClick={handleReset}
                 className="text-2xs font-mono uppercase tracking-wider px-3 py-1.5 rounded-sm border border-crit-900/50 text-crit-500/90 hover:bg-crit-950/20 transition-colors"
+                title="Clear saved layout and restore all defaults including lock state"
               >
-                Reset default
+                Reset all
               </button>
               <button
                 type="button"
@@ -348,6 +380,22 @@ export function DashboardDeck({
                 aiBriefError={aiBriefError}
                 feedUpdatedAt={lastFetch}
               />
+            </div>
+          </GridChrome>
+        </div>
+
+        <div key="cross-asset">
+          <GridChrome id="cross-asset">
+            <div className="h-full min-h-0 overflow-y-auto">
+              <CrossAssetStrip items={state.crossAsset} />
+            </div>
+          </GridChrome>
+        </div>
+
+        <div key="event-calendar">
+          <GridChrome id="event-calendar">
+            <div className="h-full min-h-0 overflow-y-auto">
+              <EventCalendarCard />
             </div>
           </GridChrome>
         </div>
@@ -429,7 +477,11 @@ export function DashboardDeck({
 
         <div key="internals">
           <GridChrome id="internals">
-            <InternalsCard data={state.internals} />
+            <InternalsCard
+              data={state.internals}
+              breadth={state.breadth}
+              flows={state.flows}
+            />
           </GridChrome>
         </div>
 

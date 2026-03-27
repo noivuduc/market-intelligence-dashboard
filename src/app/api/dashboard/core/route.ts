@@ -1,6 +1,5 @@
 // ============================================================
-// DASHBOARD API — backward-compatible alias for core lane
-// Prefer /api/dashboard/core + /sparklines + /options for progressive loading.
+// DASHBOARD CORE LANE (Tier 1) — FRED + Yahoo quotes/breadth only
 // ============================================================
 
 import { dashboardCoreGET } from '@/lib/dashboard/dashboard-core-http'
