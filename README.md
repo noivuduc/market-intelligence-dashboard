@@ -24,24 +24,33 @@
 
 ## Contents
 
-- [Preview](#preview)
-- [What it is](#what-it-is)
-- [Why it exists](#why-it-exists)
-- [Key features](#key-features)
-- [Tech stack](#tech-stack)
-- [Architecture overview](#architecture-overview)
-- [Installation](#installation)
-- [Environment variables](#environment-variables)
-- [Running locally](#running-locally)
-- [Project structure](#project-structure)
-- [Deploying](#deploying)
-- [Signal configuration](#signal-configuration)
-- [Limitations and caveats](#limitations-and-caveats)
-- [Roadmap](#roadmap)
-- [Contributing](#contributing)
-- [License](#license)
-- [Acknowledgements](#acknowledgements)
-- [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md) · [Changelog](CHANGELOG.md)
+- [Market Intelligence Dashboard](#market-intelligence-dashboard)
+  - [Preview](#preview)
+  - [Contents](#contents)
+  - [What it is](#what-it-is)
+  - [Why it exists](#why-it-exists)
+  - [Key features](#key-features)
+    - [Market modules](#market-modules)
+    - [Dashboard intelligence](#dashboard-intelligence)
+    - [Architecture](#architecture)
+  - [Tech stack](#tech-stack)
+  - [Architecture overview](#architecture-overview)
+  - [Installation](#installation)
+    - [Zero API keys (quick smoke test)](#zero-api-keys-quick-smoke-test)
+  - [Environment variables](#environment-variables)
+    - [Minimum viable (free, macro + Yahoo market)](#minimum-viable-free-macro--yahoo-market)
+    - [Full optional stack](#full-optional-stack)
+  - [Running locally](#running-locally)
+  - [Project structure](#project-structure)
+  - [Deploying](#deploying)
+    - [Vercel](#vercel)
+    - [Self-hosted](#self-hosted)
+  - [Signal configuration](#signal-configuration)
+  - [Limitations and caveats](#limitations-and-caveats)
+  - [Roadmap](#roadmap)
+  - [Contributing](#contributing)
+  - [License](#license)
+  - [Acknowledgements](#acknowledgements)
 
 ---
 
@@ -142,7 +151,7 @@ Signal layer
 **Prerequisites:** Node.js 18.18+ and npm 9+
 
 ```bash
-git clone https://github.com/your-username/market-intelligence-dashboard.git
+git clone https://github.com/noivuduc/market-intelligence-dashboard.git
 cd market-intelligence-dashboard
 npm install
 cp .env.example .env.local
@@ -241,9 +250,7 @@ src/
 
 ### Vercel
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fyour-username%2Fmarket-intelligence-dashboard&env=FRED_API_KEY,YAHOO_FINANCE_ENABLED&envDescription=See%20.env.example%20for%20all%20variables.)
-
-Replace **`your-username`** in the button URL with your GitHub user or org after you publish the repo (or use **Import Project** in Vercel and paste your repository URL).
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fnoivuduc%2Fmarket-intelligence-dashboard&env=FRED_API_KEY,YAHOO_FINANCE_ENABLED&envDescription=See%20.env.example%20for%20all%20variables.)
 
 Deploy as a standard Next.js app. Set env vars in the project dashboard (see **`.env.example`**).
 
@@ -329,7 +336,7 @@ See **`ROADMAP.md`** when present.
 See **`CONTRIBUTING.md`**, **`CODE_OF_CONDUCT.md`**, and **`SECURITY.md`**.
 
 ```bash
-git clone https://github.com/your-username/market-intelligence-dashboard.git
+git clone https://github.com/noivuduc/market-intelligence-dashboard.git
 cd market-intelligence-dashboard
 npm install
 npm test    # all tests should pass before a PR
@@ -343,13 +350,7 @@ npm test    # all tests should pass before a PR
 - UI primitives — `src/components/ui/`  
 - New sources — `src/lib/sources/` adapters  
 
-### Maintainer: replace `your-username`
-
-Before publishing, replace **`your-username`** with your GitHub user or org in:
-
-- **`package.json`** — `repository`, `bugs`, `homepage`  
-- **`README.md`** — clone URL above, **Deploy to Vercel** button (Deploying section)  
-- **`CHANGELOG.md`** — optional compare/release link at the bottom  
+**Forks:** Point the clone URL, Vercel button, and **`package.json`** fields `repository` / `bugs` / `homepage` at your own GitHub user or org.
 
 ---
 

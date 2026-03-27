@@ -7,12 +7,12 @@
   "author": "Market Intelligence Dashboard contributors",
   "repository": {
     "type": "git",
-    "url": "https://github.com/your-username/market-intelligence-dashboard.git"
+    "url": "https://github.com/noivuduc/market-intelligence-dashboard.git"
   },
   "bugs": {
-    "url": "https://github.com/your-username/market-intelligence-dashboard/issues"
+    "url": "https://github.com/noivuduc/market-intelligence-dashboard/issues"
   },
-  "homepage": "https://github.com/your-username/market-intelligence-dashboard#readme",
+  "homepage": "https://github.com/noivuduc/market-intelligence-dashboard#readme",
   "scripts": {
     "dev": "node scripts/next-with-default-port.mjs dev",
     "build": "next build",
