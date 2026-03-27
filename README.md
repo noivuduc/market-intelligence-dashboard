@@ -8,6 +8,10 @@
 [![Tests](https://img.shields.io/badge/tests-106%20passing-brightgreen)](src)
 [![Next.js](https://img.shields.io/badge/Next.js-14-black)](https://nextjs.org)
 
+**Disclaimer:** This is **not financial advice**. The app is for education and research. Market data may be delayed, modeled, or unofficial — verify before acting.
+
+**Yahoo Finance:** Quotes and options are fetched via community libraries (e.g. [`yahoo-finance2`](https://www.npmjs.com/package/yahoo-finance2)), not an official Yahoo partnership. Use is at your own risk; comply with [Yahoo’s applicable terms and policies](https://policies.yahoo.com/us/en/yahoo/terms/product-atos/apiforydn/index.htm). This project is **not affiliated** with Yahoo.
+
 ---
 
 ## Preview
@@ -37,6 +41,7 @@
 - [Contributing](#contributing)
 - [License](#license)
 - [Acknowledgements](#acknowledgements)
+- [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md) · [Changelog](CHANGELOG.md)
 
 ---
 
@@ -143,6 +148,10 @@ npm install
 cp .env.example .env.local
 ```
 
+### Zero API keys (quick smoke test)
+
+You can run **`npm run dev`** with **no** `.env.local` (or empty values): the UI loads with **placeholder** modules and clear empty states — useful to verify the install. Add **`FRED_API_KEY`** when you want live Fed / Treasury / macro / liquidity data; Yahoo market data stays available when `YAHOO_FINANCE_ENABLED` is not `false`.
+
 ---
 
 ## Environment variables
@@ -232,7 +241,11 @@ src/
 
 ### Vercel
 
-Deploy as a standard Next.js app. Set env vars in the project dashboard.
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fyour-username%2Fmarket-intelligence-dashboard&env=FRED_API_KEY,YAHOO_FINANCE_ENABLED&envDescription=See%20.env.example%20for%20all%20variables.)
+
+Replace **`your-username`** in the button URL with your GitHub user or org after you publish the repo (or use **Import Project** in Vercel and paste your repository URL).
+
+Deploy as a standard Next.js app. Set env vars in the project dashboard (see **`.env.example`**).
 
 > **Cache:** The default cache is **in-process**. On serverless, instances may be cold; for shared cache across invocations, replace **`src/lib/cache/server.ts`** with Redis (or similar).
 
@@ -313,7 +326,7 @@ See **`ROADMAP.md`** when present.
 
 ## Contributing
 
-See **`CONTRIBUTING.md`** when present.
+See **`CONTRIBUTING.md`**, **`CODE_OF_CONDUCT.md`**, and **`SECURITY.md`**.
 
 ```bash
 git clone https://github.com/your-username/market-intelligence-dashboard.git
@@ -330,11 +343,13 @@ npm test    # all tests should pass before a PR
 - UI primitives — `src/components/ui/`  
 - New sources — `src/lib/sources/` adapters  
 
-**Optional repo files** (if you maintain a public fork)
+### Maintainer: replace `your-username`
 
-- **`CONTRIBUTING.md`** — setup, `npm test`, `npx tsc --noEmit`, conventional commits  
-- **`SECURITY.md`** — how to report issues; remind deployers to protect API keys  
-- **`CODE_OF_CONDUCT.md`** — e.g. Contributor Covenant  
+Before publishing, replace **`your-username`** with your GitHub user or org in:
+
+- **`package.json`** — `repository`, `bugs`, `homepage`  
+- **`README.md`** — clone URL above, **Deploy to Vercel** button (Deploying section)  
+- **`CHANGELOG.md`** — optional compare/release link at the bottom  
 
 ---
 

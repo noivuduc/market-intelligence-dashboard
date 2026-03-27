@@ -17,7 +17,7 @@ export const runtime = 'nodejs'
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
-  const module = searchParams.get('module')  // 'fed' | 'treasury' | 'liquidity' | 'macro'
+  const fredModule = searchParams.get('module')  // 'fed' | 'treasury' | 'liquidity' | 'macro'
 
   if (!process.env.FRED_API_KEY) {
     return NextResponse.json(
@@ -27,7 +27,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    switch (module) {
+    switch (fredModule) {
       case 'fed': {
         const { data } = await serverCache.getOrFetch(
           CacheKeys.fedModule(),
@@ -80,9 +80,9 @@ export async function GET(request: Request) {
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
-    console.error(`[/api/sources/fred] Error for module=${module}:`, message)
+    console.error(`[/api/sources/fred] Error for module=${fredModule}:`, message)
     return NextResponse.json(
-      { error: message, module },
+      { error: message, module: fredModule },
       { status: 502 }
     )
   }

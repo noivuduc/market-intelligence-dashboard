@@ -33,7 +33,7 @@ export function TopBar({ regime, alerts, lastUpdated }: TopBarProps) {
           <span className="font-mono text-sm font-bold uppercase tracking-[0.2em] text-ink-secondary">
             MARKET INTEL
           </span>
-          <span className="text-ops-400 mx-1">//</span>
+          <span className="text-ops-400 mx-1">{'//'}</span>
           <span className="font-mono text-xs uppercase tracking-widest text-ink-ghost">
             COMMAND DASHBOARD
           </span>

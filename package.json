@@ -2,6 +2,17 @@
   "name": "market-intelligence-dashboard",
   "version": "1.0.0",
   "private": true,
+  "description": "Self-hosted market intelligence dashboard — Fed, Treasury, macro, liquidity, breadth, and SPX options context. Next.js + TypeScript.",
+  "license": "MIT",
+  "author": "Market Intelligence Dashboard contributors",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-username/market-intelligence-dashboard.git"
+  },
+  "bugs": {
+    "url": "https://github.com/your-username/market-intelligence-dashboard/issues"
+  },
+  "homepage": "https://github.com/your-username/market-intelligence-dashboard#readme",
   "scripts": {
     "dev": "node scripts/next-with-default-port.mjs dev",
     "build": "next build",
