@@ -1,7 +1,7 @@
 # Market Intelligence Dashboard
 
-> Self-hosted market intelligence for independent traders and quantitative developers.  
-> Aggregates Fed policy, Treasury rates, macro releases, liquidity, equity breadth, and options positioning into one command-center view.
+> **Self-hosted market intelligence dashboard** — Fed policy, rates, macro, breadth, and options positioning in one command-center view.  
+> For developers and independent traders who want **context**, not just price charts.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)](tsconfig.json)
