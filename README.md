@@ -1,179 +1,355 @@
 # Market Intelligence Dashboard
 
-A Next.js dashboard for U.S. market intelligence with a command-center style UI. It aggregates Fed policy, Treasury rates, macro indicators, liquidity, market prices and breadth (via Yahoo Finance), and optional AI briefings. Missing data sources degrade gracefully with labeled placeholders.
+> Self-hosted market intelligence for independent traders and quantitative developers.  
+> Aggregates Fed policy, Treasury rates, macro releases, liquidity, equity breadth, and options positioning into one command-center view.
 
-**Stack:** Next.js 14, React 18, TypeScript, Tailwind CSS, Recharts.
-
----
-
-## Prerequisites
-
-- **Node.js 18.18+** (or any version compatible with Next.js 14)
-- **npm** (or use `pnpm` / `yarn` if you prefer — lockfile is not committed here)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![TypeScript](https://img.shields.io/badge/TypeScript-strict-blue)](tsconfig.json)
+[![Tests](https://img.shields.io/badge/tests-106%20passing-brightgreen)](src)
+[![Next.js](https://img.shields.io/badge/Next.js-14-black)](https://nextjs.org)
 
 ---
 
-## Quick start
+## Preview
+
+<p align="center">
+  <img src="./market_intelligence.png" alt="Market Intelligence Dashboard" width="1200" />
+</p>
+
+---
+
+## Contents
+
+- [Preview](#preview)
+- [What it is](#what-it-is)
+- [Why it exists](#why-it-exists)
+- [Key features](#key-features)
+- [Tech stack](#tech-stack)
+- [Architecture overview](#architecture-overview)
+- [Installation](#installation)
+- [Environment variables](#environment-variables)
+- [Running locally](#running-locally)
+- [Project structure](#project-structure)
+- [Deploying](#deploying)
+- [Signal configuration](#signal-configuration)
+- [Limitations and caveats](#limitations-and-caveats)
+- [Roadmap](#roadmap)
+- [Contributing](#contributing)
+- [License](#license)
+- [Acknowledgements](#acknowledgements)
+
+---
+
+## What it is
+
+A self-hosted, single-user dashboard that pulls from public and semi-public APIs (FRED, Yahoo Finance, Polygon.io) and turns them into structured modules: Fed stance, Treasury curve regime, macro surprises, liquidity stress, breadth, flows, and options-style positioning.
+
+It is **not** a trading system and does **not** output buy/sell signals. It is an **information and context** layer—the cross-asset picture institutions get from many terminals, without the same subscription cost.
+
+## Why it exists
+
+Macro context is expensive (Bloomberg, Refinitiv, etc.). Many retail tools show prices in isolation, without the policy, liquidity, and positioning backdrop that drives structural moves.
+
+This project gives that layer to anyone who can run a Node.js app.
+
+---
+
+## Key features
+
+### Market modules
+
+| Area | What you get |
+|------|----------------|
+| **Fed / policy** | Target rate, balance sheet, QT pace, FOMC countdown, stance |
+| **Treasury / rates** | Curve 3M–30Y, 2s10s / 2s30s, curve & rates regime |
+| **Macro** | CPI, Core PCE, payrolls, unemployment, GDP, ISM—surprises & z-scores |
+| **Liquidity** | SOFR, reserves, ON RRP, adjusted NFCI, HY/IG, VIX, vulnerability |
+| **Equity breadth** | Sector 52w range, SPX/NDX/RUT, equal-weight read, tape quality |
+| **Flows** | ETF dollar-volume proxy, futures pressure, off-exchange share |
+| **Options** | SPX walls / zero-gamma heuristics when chain + OI (or greeks) exist |
+| **Internals** | Proxy mode from sector ETFs when no exchange breadth feed |
+
+### Dashboard intelligence
+
+- **Regime engine** — Rule-based composite (policy, liquidity, risk, trend, flow, positioning) with confidence and drivers  
+- **Alerts** — Threshold-based (rates, vol, FOMC, macro)  
+- **AI briefing** — Optional Claude summary (Anthropic API)  
+- **Command brief** — Top-level read: regime, drivers, risks, watch list  
+
+### Architecture
+
+- **Progressive loading** — Core (FRED + Yahoo quotes) first; options lane and sparklines follow; AI last  
+- **Trust labels** — Metrics tagged `observed` / `derived` / `inferred` / `unavailable`  
+- **Caching** — In-process TTL + stale fallback where applicable  
+- **Layout** — `react-grid-layout` with persisted layout  
+
+---
+
+## Tech stack
+
+| Layer | Technology |
+|-------|------------|
+| Framework | Next.js 14 (App Router) |
+| Language | TypeScript (strict) |
+| Styling | Tailwind CSS |
+| Charts | Recharts |
+| Layout | react-grid-layout |
+| State | Zustand + SWR |
+| Macro | FRED API (St. Louis Fed) |
+| Market quotes / history | Yahoo Finance via [`yahoo-finance2`](https://www.npmjs.com/package/yahoo-finance2) |
+| Options chain | Yahoo (`^SPX`) and/or Polygon.io |
+| AI (optional) | Anthropic Claude |
+| Tests | Vitest |
+
+---
+
+## Architecture overview
+
+```text
+Client (browser)
+└── DashboardDeck (react-grid-layout)
+    └── Module cards (FedCard, MacroCard, OptionsCard, …)
+
+Server (Next.js API routes)
+├── /api/dashboard/core       → FRED + Yahoo quotes + core regime (Tier 1)
+├── /api/dashboard/options    → Options chain + regime refresh (Tier 2, often deferred)
+├── /api/dashboard/sparklines → Yahoo chart history (Tier 2, parallel)
+└── /api/ai/summary           → Claude briefing (Tier 3, TTL-cached)
+
+Data layer
+├── src/lib/sources/fred.ts
+├── src/lib/sources/yahoo.ts
+├── src/lib/sources/yahoo-options.ts
+├── src/lib/sources/polygon-options.ts
+└── src/lib/cache/server.ts
+
+Signal layer
+├── src/lib/features/
+├── src/lib/regime/engine.ts
+├── src/lib/alerts/
+└── src/lib/config/thresholds.ts
+```
+
+---
+
+## Installation
+
+**Prerequisites:** Node.js 18.18+ and npm 9+
 
 ```bash
+git clone https://github.com/your-username/market-intelligence-dashboard.git
 cd market-intelligence-dashboard
 npm install
 cp .env.example .env.local
 ```
 
-Edit `.env.local` with at least **`FRED_API_KEY`** (see below), then:
+---
+
+## Environment variables
+
+Configure **`.env.local`** (copy from **`.env.example`**).
+
+### Minimum viable (free, macro + Yahoo market)
 
 ```bash
+# Required for Fed / Treasury / Macro / Liquidity (free key)
+FRED_API_KEY=your_fred_key_here   # https://fred.stlouisfed.org/docs/api/api_key.html
+
+# Yahoo is on by default — no key
+YAHOO_FINANCE_ENABLED=true
+```
+
+With only **`FRED_API_KEY`**, you still get Fed, Treasury, Liquidity, Macro, breadth, and flows fed from Yahoo quotes.
+
+### Full optional stack
+
+```bash
+FRED_API_KEY=          # Macro / Fed / Treasury / liquidity series
+ANTHROPIC_API_KEY=     # Claude briefing (optional)
+POLYGON_API_KEY=       # Options with greeks (optional; Yahoo otherwise)
+OPTIONS_CHAIN_SOURCE=  # auto | yahoo | polygon — see .env.example
+```
+
+> **No keys:** The app runs in **placeholder** mode: cards render with empty states; no crashes.
+
+**SPX options on Yahoo:** use the **`^SPX`** chain. Do **not** set `YAHOO_OPTIONS_SYMBOL=^GSPC` for options—that ticker is the **spot index**; Yahoo returns a quote but **no option chain**. Default behavior uses `^SPX`.
+
+Tuning (cache TTLs, rate limits, `DASHBOARD_OPTIONS_LOG`, etc.) is documented in **`.env.example`**.
+
+---
+
+## Running locally
+
+```bash
+# Development (default port 3001 via project script)
 npm run dev
+
+# Production
+npm run build
+npm start
+
+# Tests
+npm test
+
+# Types
+npx tsc --noEmit
 ```
 
-Open [http://localhost:3001](http://localhost:3001).
-
-**Port note:** `npm run dev` / `npm start` set **`PORT=3001`** before Next starts (see `scripts/next-with-default-port.mjs`). Plain **`npx next dev`** does not use that script and defaults to **3000** unless you run **`PORT=3001 npx next dev`** (or pass **`-p 3001`**).
+Open **http://localhost:3001** (or the port printed in the terminal).
 
 ---
 
-## API keys and data access
+## Project structure
 
-Secrets belong in **`.env.local`** only. That file is gitignored. Next.js loads it automatically in development and production builds on your machine; **never** put API keys in `NEXT_PUBLIC_*` variables (those are exposed to the browser). This app keeps FRED and Anthropic usage on the **server** (API routes).
-
-### Summary
-
-| Variable | Required? | Purpose |
-|----------|-----------|---------|
-| `FRED_API_KEY` | **Strongly recommended** | Fed, Treasury, liquidity, macro modules (official series from FRED) |
-| `FRED_MAX_CONCURRENT` / `FRED_BATCH_GAP_MS` | Optional | Cap concurrent FRED requests per module batch (default **6** / **40** ms) to reduce **502** from their gateway |
-| `FRED_FETCH_ATTEMPTS` / `FRED_RETRY_BASE_MS` | Optional | Retries on transient **502/503/504/429** (defaults **3** / **400** ms) |
-| `ANTHROPIC_API_KEY` | Optional | Executive briefing (`/api/ai/summary`) and module explanations (`/api/ai/explain`) |
-| `YAHOO_FINANCE_ENABLED` | Optional toggle | Default `true`. Set to `false` to turn off Yahoo-based market data (no key needed) |
-| `YAHOO_OPTIONS_SYMBOL` | Optional | Override Yahoo options underlying (e.g. `^GSPC` if `^SPX` returns 401) |
-| `YAHOO_OPTIONS_AFTER_MARKET_MS` | Optional | Pause before options after chart batch (default **0**; try **2500–4000** if options **429**) |
-| `YAHOO_OPTIONS_MAX_EXPIRATIONS` | Optional | Expiration pages merged (default **1**; raise only if Yahoo allows) |
-| `YAHOO_OPTIONS_REQUEST_GAP_MS` | Optional | Pause between option `?date=` calls (default **200** ms) |
-| `YAHOO_OPTIONS_HOST` | Optional | `query1` or `query2` only — **half** the requests per page vs both |
-| `YAHOO_OPTIONS_429_FALLBACK_GAP_MS` | Optional | Extra wait before trying `^GSPC` after `^SPX` **429** (default **12000**) |
-| `YAHOO_MAX_CONCURRENT` | Optional | Max **parallel** Yahoo **chart** (v8) requests per batch (default **10**) |
-| `YAHOO_CHART_GAP_MS` | Optional | Pause between chart batches for quotes + sparklines (default **50** ms) |
-| `POLYGON_API_KEY` | Optional | Polygon **I:SPX** option snapshot when `OPTIONS_CHAIN_SOURCE` is `polygon` or `auto` and this key is set |
-| `OPTIONS_CHAIN_SOURCE` | Optional | `yahoo` / `yfinance` / `yfin` (default) \| `polygon` \| `auto`. Chooses SPX options backend; see below |
-
-**Practical setups**
-
-- **Minimum useful:** `FRED_API_KEY` only → macro/rates/Fed data live; Yahoo market data on by default; AI sections show placeholders.
-- **Full:** `FRED_API_KEY` + `ANTHROPIC_API_KEY` → adds Claude-powered summaries and explanations.
-- **Options structure:** **Default is Yahoo** **`^SPX`** (unset `OPTIONS_CHAIN_SOURCE` or set `yahoo` / `yfinance` / `yfin`) so a non-entitled `POLYGON_API_KEY` does not block options. Use **`OPTIONS_CHAIN_SOURCE=auto`** to try Polygon first when a key is set, then fall back to Yahoo on errors (e.g. 403). Use **`polygon`** for Polygon only.
-
-### 1. FRED API key (free)
-
-Used by the dashboard for Fed policy, Treasury curve, liquidity, and macro release modules.
-
-1. Create a free account: [FRED account login](https://fredaccount.stlouisfed.org/login/secure/)
-2. Go to **My Account → API Keys → Request API Key**
-3. Documentation: [FRED API key help](https://fred.stlouisfed.org/docs/api/api_key.html)
-
-In `.env.local`:
-
-```bash
-FRED_API_KEY=your_fred_key_here
+```text
+src/
+├── app/
+│   ├── api/
+│   │   ├── dashboard/core/
+│   │   ├── dashboard/options/
+│   │   ├── dashboard/sparklines/
+│   │   └── ai/
+│   └── page.tsx
+├── components/
+│   ├── ui/
+│   ├── modules/
+│   └── dashboard/
+└── lib/
+    ├── config/thresholds.ts
+    ├── features/
+    ├── sources/
+    ├── regime/
+    ├── alerts/
+    ├── cache/server.ts
+    ├── dashboard/
+    ├── types/
+    └── ai/
 ```
-
-Without this key, those modules use explicit placeholder data; the UI shows a data-quality banner.
-
-### 2. Anthropic API key (optional, paid usage)
-
-Used only if you want AI-generated briefings and explanations.
-
-1. Sign up at [Anthropic Console](https://console.anthropic.com)
-2. **API Keys → Create Key**
-3. Add to `.env.local`:
-
-```bash
-ANTHROPIC_API_KEY=sk-ant-api03-...
-```
-
-Billing is usage-based. If the key is missing, AI routes return a clear error JSON and the UI stays usable.
-
-### 3. Yahoo Finance (no API key)
-
-Market prices, breadth, flows, and watchlist use an unofficial Yahoo Finance path on the **server**. There is no key. The **options module** uses Yahoo’s v7 options API (browser-like headers; **query2** then **query1** unless **`YAHOO_OPTIONS_HOST`** is set). By default it does **not** wait after the chart batch (fast load); if you see options **429**, set **`YAHOO_OPTIONS_AFTER_MARKET_MS`** (e.g. `3000`). It **retries 429** with backoff, defaults to **one** expiration page, and **serves the last successful chain from cache** when a refresh fails. It tries **`^SPX`** then **`^GSPC`** with a longer gap only if the first call returned **429**.
-
-**Why options still 429:** Yahoo limits **all** traffic from your IP. If it persists, add **`YAHOO_OPTIONS_AFTER_MARKET_MS`**, **`YAHOO_OPTIONS_HOST=query1`**, or **`YAHOO_OPTIONS_SYMBOL=^GSPC`**.
-
-**Why options sometimes showed 429 first:** the **options** request runs **after** dozens of **chart** requests on the same load; the limiter often trips on that next call. Chart batching uses **`YAHOO_MAX_CONCURRENT`** / **`YAHOO_CHART_GAP_MS`**.
-
-To disable Yahoo entirely:
-
-```bash
-YAHOO_FINANCE_ENABLED=false
-```
-
-### 4. SPX options chain: `OPTIONS_CHAIN_SOURCE` + Polygon (optional)
-
-The dashboard derives put/call walls and heuristic gamma fields from a **cached** chain (~5 minutes, see `TTL.OPTIONS_STRUCTURE`). Pick the backend with **`OPTIONS_CHAIN_SOURCE`**:
-
-| Value | Behavior |
-|-------|----------|
-| **`yahoo`** / **`yfinance`** / **`yfin`** (**default** if unset) | Always Yahoo **`^SPX`** — Polygon key is ignored for this module |
-| `auto` | If `POLYGON_API_KEY` is set, try Polygon **I:SPX** first; on failure, use Yahoo **`^SPX`**. If no key, Yahoo only |
-| `polygon` | Polygon **I:SPX** only (requires entitled `POLYGON_API_KEY`; no Yahoo fallback) |
-
-```bash
-# Explicit Yahoo / yfinance (optional — same as leaving OPTIONS_CHAIN_SOURCE unset)
-OPTIONS_CHAIN_SOURCE=yfinance
-
-# Try Polygon first, fall back to Yahoo if Polygon errors
-OPTIONS_CHAIN_SOURCE=auto
-```
-
-**Polygon:** sign up at [Polygon.io](https://polygon.io), enable **options** access for your plan, then:
-
-```bash
-POLYGON_API_KEY=your_polygon_key_here
-```
-
-This is **not** a full dealer GEX engine; the options card shows source caveats for whichever provider is active.
-
-### 5. BLS API (not read by code yet)
-
-**`BLS_API_KEY`** is reserved for a possible future direct BLS integration. Labor and CPI-style series are pulled via **FRED** today.
 
 ---
 
-## Data sources (by module)
+## Deploying
 
-| Area | Source | API key |
-|------|--------|---------|
-| Fed policy, Treasury, liquidity, macro | [FRED](https://fred.stlouisfed.org) | `FRED_API_KEY` |
-| Market prices, breadth, flows, watchlist | Yahoo Finance (unofficial, server-side) | None |
-| AI summary / explain | [Anthropic](https://www.anthropic.com) | `ANTHROPIC_API_KEY` |
-| SPX options structure (walls, heuristic gamma) | [Polygon.io](https://polygon.io) **I:SPX** **or** Yahoo **`^SPX`** (see `OPTIONS_CHAIN_SOURCE`) | `POLYGON_API_KEY` optional; Yahoo needs no key |
-| Retail flow, some internals | Placeholders / inferred | Premium feeds not bundled |
+### Vercel
 
-Caching uses fixed TTLs in `src/lib/cache/server.ts` (in-process; no Redis in this repo).
+Deploy as a standard Next.js app. Set env vars in the project dashboard.
 
----
+> **Cache:** The default cache is **in-process**. On serverless, instances may be cold; for shared cache across invocations, replace **`src/lib/cache/server.ts`** with Redis (or similar).
 
-## Scripts
+### Self-hosted
 
-| Command | Description |
-|---------|-------------|
-| `npm run dev` | Dev server on port **3001** |
-| `npm run build` | Production build |
-| `npm run start` | Production server on port **3001** |
-| `npm run lint` | ESLint |
-| `npm run type-check` | `tsc --noEmit` |
+```bash
+npm run build
+PORT=3001 npm start
+```
 
 ---
 
-## Project layout (high level)
+## Signal configuration
 
-- `src/app/` — App Router pages and API routes (`/api/dashboard`, `/api/ai/*`, etc.)
-- `src/lib/features/` — Module builders (Fed, Treasury, macro, liquidity, market)
-- `src/lib/sources/` — FRED, Yahoo, Polygon options snapshot, and related types
-- `src/components/` — Dashboard UI
+Thresholds and regime weights live in **`src/lib/config/thresholds.ts`**—single place to tune behavior:
+
+```typescript
+export const BREADTH = {
+  ADVANCING_THRESHOLD: 60,
+  DECLINING_THRESHOLD: 40,
+  BROAD_MIN_SECTORS: 7,
+  // ...
+}
+
+export const REGIME = {
+  WEIGHTS: {
+    policy: 0.15,
+    liquidity: 0.20,
+    risk: 0.20,
+    trend: 0.20,
+    flow: 0.10,
+    positioning: 0.15,
+  },
+  // ...
+}
+```
 
 ---
 
-## Disclaimer
+## Limitations and caveats
 
-Signals marked inferred or unavailable are low confidence or not connected to live premium feeds. This project is for information and analysis only, not investment advice.
+This is **not financial advice**. Dashboards narrow information gaps; they do not remove model risk or bad regimes.
+
+| Topic | Notes |
+|--------|--------|
+| **Macro / Fed** | FRED: official series; typical lag on dailies |
+| **Equity quotes** | Yahoo unofficial client; delays possible; API can change |
+| **Options** | Yahoo: OI-focused; greeks often thin—heuristics, not OPRA GEX. Polygon: needs entitled key for full chain |
+| **Breadth** | From sector ETF 52w range—**not** NYSE A/D or % above 50dma |
+| **Flows** | Proxies from price/volume—not ETF create/redeem |
+| **AI** | Claude text is generative—verify before acting |
+| **Retail flows** | Not wired—would need licensed vendors |
+
+Anything labeled **proxy** or **derived** in the UI should not be read as exchange-grade data.
+
+---
+
+## Roadmap
+
+See **`ROADMAP.md`** when present.
+
+**Near-term ideas**
+
+- Dockerfile for self-hosted deploy  
+- Redis (or similar) for multi-instance cache  
+- Configurable watchlist symbols  
+- Export / share snapshot  
+- WebSocket or push for fresher tiles  
+
+**Longer-term / contributions**
+
+- True A/D or breadth via a stocks API  
+- Real ETF flow where licensing allows  
+- Alert destinations (email, Slack, webhook)  
+- Optional NDX / RUT positioning modules  
+
+---
+
+## Contributing
+
+See **`CONTRIBUTING.md`** when present.
+
+```bash
+git clone https://github.com/your-username/market-intelligence-dashboard.git
+cd market-intelligence-dashboard
+npm install
+npm test    # all tests should pass before a PR
+```
+
+**Good first areas**
+
+- Alert rules — `src/lib/alerts/`  
+- Formatting helpers — `src/lib/format/`  
+- Thresholds — `src/lib/config/thresholds.ts`  
+- UI primitives — `src/components/ui/`  
+- New sources — `src/lib/sources/` adapters  
+
+**Optional repo files** (if you maintain a public fork)
+
+- **`CONTRIBUTING.md`** — setup, `npm test`, `npx tsc --noEmit`, conventional commits  
+- **`SECURITY.md`** — how to report issues; remind deployers to protect API keys  
+- **`CODE_OF_CONDUCT.md`** — e.g. Contributor Covenant  
+
+---
+
+## License
+
+**MIT** — see **`LICENSE`**.
+
+No affiliation with any bank, broker, or data vendor. Data comes from public or API-licensed sources. **Use at your own risk.**
+
+---
+
+## Acknowledgements
+
+- **FRED** — Federal Reserve Economic Data (St. Louis Fed)  
+- **yahoo-finance2** — Unofficial Yahoo Finance client  
+- **Polygon.io** — Optional licensed market data  
+- **Anthropic Claude** — Optional AI briefing  
+- **react-grid-layout** — Dashboard layout  
