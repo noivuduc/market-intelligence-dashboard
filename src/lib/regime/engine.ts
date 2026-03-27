@@ -13,6 +13,7 @@ import type {
   TreasuryModule,
   MacroModule,
 } from '@/lib/types'
+import { REGIME } from '@/lib/config/thresholds'
 
 // ---- Sub-score computers (each returns 0–100, higher = more "risk-on") ----
 
@@ -40,7 +41,6 @@ function computeLiquidityScore(liq: LiquidityModule): number {
   if (liq.volStress === 'low')     score += 5
   else if (liq.volStress === 'elevated') score -= 10
   else if (liq.volStress === 'high')     score -= 20
-  // Subtract vulnerability
   score -= (liq.vulnerabilityScore / 100) * 20
   return clamp(score, 0, 100)
 }
@@ -79,16 +79,23 @@ function computeTrendScore(breadth: BreadthModule): number {
   return clamp(score, 0, 100)
 }
 
+/**
+ * Flow score is currently a CIRCULAR PROXY — overallPressure and futuresPressure
+ * are both derived from SPX % change, the same input used by computeTrendScore.
+ * The weight for this sub-score is reduced (see REGIME.WEIGHTS) until independent
+ * flow data (CME futures positioning, real-time ETF creation/redemption) is connected.
+ * optionsPremiumFlow and demandType are hardcoded and do NOT contribute to scoring.
+ */
 function computeFlowScore(flows: FlowsModule): number {
   let score = 50
-  if (flows.overallPressure === 'buying') score += 20
+  // overallPressure: circular proxy from SPX direction — contributes at reduced weight
+  if (flows.overallPressure === 'buying')  score += 20
   else if (flows.overallPressure === 'selling') score -= 20
-  if (flows.demandType === 'organic') score += 15
-  else if (flows.demandType === 'mechanical') score -= 5
-  if (flows.futuresPressure === 'buying') score += 10
+  // futuresPressure: also circular (from SPX direction)
+  if (flows.futuresPressure === 'buying')  score += 10
   else if (flows.futuresPressure === 'selling') score -= 10
-  if (flows.optionsPremiumFlow === 'call-heavy') score += 10
-  else if (flows.optionsPremiumFlow === 'put-heavy') score -= 10
+  // optionsPremiumFlow: hardcoded 'balanced' — contribution intentionally DISABLED
+  // demandType: hardcoded 'mixed' — contribution intentionally DISABLED
   return clamp(score, 0, 100)
 }
 
@@ -111,44 +118,48 @@ function classifyRegime(
   subScores: RegimeSubScore,
   breadth: BreadthModule,
 ): RegimeLabel {
-  const trendScore = subScores.trend
+  const { RISK_ON_THRESHOLD, RISK_OFF_THRESHOLD, TRANSITION_LOW, TRANSITION_HIGH } = REGIME
 
   // Topping candidate: high composite but deteriorating breadth/flow
-  if (composite >= 65 && breadth.participation === 'deteriorating' && !breadth.breadthConfirmed) {
+  if (composite >= RISK_ON_THRESHOLD && breadth.participation === 'deteriorating' && !breadth.breadthConfirmed) {
     return 'topping-candidate'
   }
   // Bottoming candidate: low composite but flow/positioning turning
-  if (composite <= 35 && subScores.flow >= 55 && subScores.positioning >= 50) {
+  if (composite <= RISK_OFF_THRESHOLD && subScores.flow >= 55 && subScores.positioning >= 50) {
     return 'bottoming-candidate'
   }
   // Transition zone
-  if (composite >= 42 && composite <= 58) {
+  if (composite >= TRANSITION_LOW && composite <= TRANSITION_HIGH) {
     return 'transition'
   }
-  // Risk-on
-  if (composite >= 65) return 'risk-on'
-  // Risk-off
-  if (composite <= 35) return 'risk-off'
-  // Sideways
-  if (trendScore >= 40 && trendScore <= 60 && breadth.tapeQuality === 'mixed') {
-    return 'sideways'
-  }
-  if (composite > 58) return 'risk-on'
-  if (composite < 42) return 'risk-off'
+  // Risk-on / risk-off
+  if (composite >= RISK_ON_THRESHOLD) return 'risk-on'
+  if (composite <= RISK_OFF_THRESHOLD) return 'risk-off'
+  // Sideways: composite in (35,65) but not transition — mixed signals
+  if (breadth.tapeQuality === 'mixed') return 'sideways'
+  if (composite > TRANSITION_HIGH) return 'risk-on'
+  if (composite < TRANSITION_LOW)  return 'risk-off'
   return 'sideways'
 }
 
 // ---- Confidence derivation ----
+// Problem: if all sub-scores are forced to 50 (placeholder inputs), stdDev → 0 → confidence → 95.
+// Fix: penalise confidence for each sub-score that is at exactly 50 because its module is a
+// placeholder/unavailable, not because market conditions are genuinely neutral.
 
-function computeConfidence(subScores: RegimeSubScore): number {
+function computeConfidence(
+  subScores: RegimeSubScore,
+  forcedNeutralKeys: Set<keyof RegimeSubScore>,
+): number {
   const values = Object.values(subScores)
   const avg = values.reduce((a, b) => a + b, 0) / values.length
   const variance = values.reduce((sum, v) => sum + Math.pow(v - avg, 2), 0) / values.length
-  // High agreement = high confidence; high variance = low confidence
   const stdDev = Math.sqrt(variance)
-  // Normalize: stdDev=0 → 95 confidence; stdDev=30 → 40 confidence
-  const confidence = Math.max(30, 95 - stdDev * 1.8)
-  return Math.round(confidence)
+  // Base confidence from signal agreement
+  const base = REGIME.CONFIDENCE_MAX - stdDev * REGIME.CONFIDENCE_SLOPE
+  // Penalise for each forced-neutral sub-score (placeholder data)
+  const missingPenalty = forcedNeutralKeys.size * REGIME.CONFIDENCE_MISSING_PENALTY
+  return Math.round(clamp(base - missingPenalty, REGIME.CONFIDENCE_MIN, REGIME.CONFIDENCE_MAX))
 }
 
 // ---- Narrative builders ----
@@ -161,7 +172,7 @@ function buildDrivers(subScores: RegimeSubScore, composite: number): string[] {
     liquidity:   'Market liquidity conditions',
     risk:        'Macro/credit risk backdrop',
     trend:       'Price trend and breadth',
-    flow:        'Institutional flow pressure',
+    flow:        'Flow pressure (SPX proxy)',
     positioning: 'Options dealer positioning',
   }
   if (composite >= 50) {
@@ -176,7 +187,7 @@ function buildRisks(subScores: RegimeSubScore): string[] {
   if (subScores.liquidity < 40)   risks.push('Liquidity conditions are tightening — credit stress watch')
   if (subScores.risk < 35)        risks.push('Macro deterioration risk — growth/inflation crosscurrent')
   if (subScores.trend < 40)       risks.push('Breadth divergence — rally may not be sustainable')
-  if (subScores.flow < 35)        risks.push('Institutional flow is net selling — demand quality weak')
+  if (subScores.flow < 35)        risks.push('Tape pressure negative — demand quality weak')
   if (subScores.positioning < 35) risks.push('Dealer positioning short gamma — volatility amplification risk')
   if (risks.length === 0) {
     risks.push('No acute structural risks detected at this time')
@@ -189,11 +200,11 @@ function buildRisks(subScores: RegimeSubScore): string[] {
 function buildWatchNext(subScores: RegimeSubScore, label: RegimeLabel): string[] {
   const watch: string[] = []
   if (label === 'topping-candidate') {
-    watch.push('Watch breadth for further deterioration below 50-day')
+    watch.push('Watch breadth for further deterioration below 52w range midpoint')
     watch.push('Monitor put wall for defensive hedging acceleration')
     watch.push('Track equal-weight vs cap-weight spread for confirmation')
   } else if (label === 'bottoming-candidate') {
-    watch.push('Watch for breadth thrust — advance/decline line expansion')
+    watch.push('Watch for breadth thrust — sector range positions recovering')
     watch.push('Monitor credit spreads for tightening confirmation')
     watch.push('Watch Fed communication for dovish pivot signal')
   } else if (label === 'risk-off') {
@@ -234,8 +245,14 @@ export function computeRegime(inputs: RegimeEngineInputs): RegimeState {
     positioning: computePositioningScore(inputs.options),
   }
 
-  // Weighted composite — trend and risk weighted higher
-  const weights = { policy: 0.15, liquidity: 0.20, risk: 0.20, trend: 0.20, flow: 0.15, positioning: 0.10 }
+  // Track which sub-scores are forced to neutral due to unavailable data
+  const forcedNeutralKeys = new Set<keyof RegimeSubScore>()
+  if (!inputs.options.structureAvailable) forcedNeutralKeys.add('positioning')
+  // Flow is a circular proxy — mark it as partially forced to flag in confidence
+  // We do NOT add it to forcedNeutralKeys since it has real SPX data, but the weight is reduced.
+
+  // Weighted composite — weights live in REGIME.WEIGHTS config
+  const weights = REGIME.WEIGHTS
   const composite = Math.round(
     Object.entries(subScores).reduce(
       (sum, [k, v]) => sum + v * weights[k as keyof typeof weights],
@@ -243,11 +260,11 @@ export function computeRegime(inputs: RegimeEngineInputs): RegimeState {
     )
   )
 
-  const label = classifyRegime(composite, subScores, inputs.breadth)
-  const confidence = computeConfidence(subScores)
-  const drivers = buildDrivers(subScores, composite)
-  const risks = buildRisks(subScores)
-  const watchNext = buildWatchNext(subScores, label)
+  const label      = classifyRegime(composite, subScores, inputs.breadth)
+  const confidence = computeConfidence(subScores, forcedNeutralKeys)
+  const drivers    = buildDrivers(subScores, composite)
+  const risks      = buildRisks(subScores)
+  const watchNext  = buildWatchNext(subScores, label)
 
   return {
     label,

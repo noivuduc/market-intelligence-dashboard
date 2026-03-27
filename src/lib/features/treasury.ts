@@ -153,6 +153,12 @@ export async function buildTreasuryModule(): Promise<TreasuryModule> {
 
   const now = new Date().toISOString()
 
+  // ---- 2s30s spread: derive from DGS30 - DGS2 since no direct FRED series ----
+  const [y30raw, y30rawP] = two(FRED_SERIES.DGS30)
+  const [y2raw,  y2rawP]  = two(FRED_SERIES.DGS2)
+  const twoThirtyVal = (y30raw && y2raw) ? { value: y30raw.value - y2raw.value, date: y30raw.date } : null
+  const twoThirtyPval = (y30rawP && y2rawP) ? { value: y30rawP.value - y2rawP.value, date: y30rawP.date } : null
+
   return {
     curve: {
       m3:    yieldMetric(m3c,  m3p),
@@ -166,7 +172,7 @@ export async function buildTreasuryModule(): Promise<TreasuryModule> {
     },
     spreads: {
       twoTen:    spreadMetric(s210c, s210p),
-      twoThirty: spreadMetric(null, null),   // not directly on FRED; could compute
+      twoThirty: spreadMetric(twoThirtyVal, twoThirtyPval),
       threeMTen: spreadMetric(s3mc,  s3mp),
     },
     curveRegime,

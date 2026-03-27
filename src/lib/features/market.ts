@@ -24,6 +24,7 @@ import type {
   WatchlistItem,
 } from '@/lib/types'
 import { sessionChangeFromCloses } from '@/lib/market/sessionChange'
+import { BREADTH } from '@/lib/config/thresholds'
 
 export type { MarketSnapshot } from '@/lib/features/market-types'
 export { WATCHLIST_ROW_DEFS, CROSS_ASSET_DEFS } from '@/lib/features/market-defs'
@@ -196,23 +197,26 @@ export async function buildMarketCoreSnapshot(): Promise<MarketSnapshot> {
     { sector: 'Discretionary', sym: YF_SYMBOLS.XLY },
   ]
 
-  // pctAbove50d: proxy from 52w range position (not true MA calculation — Yahoo Finance
-  // does not expose moving averages; this infers relative strength within the annual range).
+  // rangePosition52w: ETF's position within its 52-week high/low range, scaled [10, 90].
+  // This is NOT a percentage-of-stocks-above-50dma measure — Yahoo Finance does not
+  // expose moving averages per symbol. It is a 52-week range position score:
+  //   90 = near 52w high, 10 = near 52w low, 50 = exact midpoint.
+  // Thresholds: >= 60 = "advancing" (upper 40% of range), <= 40 = "declining".
   const sectorBreadth = sectorETFs.map(({ sector, sym }) => {
     const etfQ = q(sym)
-    let pctAbove50d = 50
+    let rangePosition52w = 50
     if (etfQ) {
       const range = etfQ.high52w - etfQ.low52w
       if (range > 0) {
         const positionInRange = (etfQ.price - etfQ.low52w) / range
-        pctAbove50d = Math.round(positionInRange * 80 + 10)
+        rangePosition52w = Math.round(positionInRange * 80 + 10)
       }
     }
-    return { sector, pctAbove50d }
-  }).sort((a, b) => b.pctAbove50d - a.pctAbove50d)
+    return { sector, rangePosition52w }
+  }).sort((a, b) => b.rangePosition52w - a.rangePosition52w)
 
-  const advancingSectors = sectorBreadth.filter(s => s.pctAbove50d >= 55).length
-  const declingSectors   = sectorBreadth.filter(s => s.pctAbove50d <= 45).length
+  const advancingSectors = sectorBreadth.filter(s => s.rangePosition52w >= BREADTH.ADVANCING_THRESHOLD).length
+  const declingSectors   = sectorBreadth.filter(s => s.rangePosition52w <= BREADTH.DECLINING_THRESHOLD).length
 
   const spxChange = spx?.changePct
   const spxTape = spxChange != null && Number.isFinite(spxChange) ? spxChange : 0
@@ -222,17 +226,19 @@ export async function buildMarketCoreSnapshot(): Promise<MarketSnapshot> {
   const ewLagging  = ewRatio && ewRatioPrev ? ewRatio < ewRatioPrev * 0.998 : false
 
   const tapeQuality: BreadthModule['tapeQuality'] =
-    spxTape > 0.5 && !rutLagging && !ewLagging ? 'healthy-rally' :
-    spxTape > 0.1 && (rutLagging || ewLagging)  ? 'weak-rally' :
-    spxTape < -0.5 && declingSectors >= 7        ? 'broad-selloff' :
-    spxTape < -0.1 && declingSectors >= 5        ? 'fragile-selloff' : 'mixed'
+    spxTape > BREADTH.TAPE_RALLY_THRESHOLD   && !rutLagging && !ewLagging               ? 'healthy-rally' :
+    spxTape > BREADTH.TAPE_SELLOFF_THRESHOLD && (rutLagging || ewLagging)               ? 'weak-rally' :
+    spxTape < -BREADTH.TAPE_RALLY_THRESHOLD  && declingSectors >= BREADTH.BROAD_SELLOFF_SECTORS    ? 'broad-selloff' :
+    spxTape < -BREADTH.TAPE_SELLOFF_THRESHOLD && declingSectors >= BREADTH.FRAGILE_SELLOFF_SECTORS ? 'fragile-selloff' : 'mixed'
 
+  // Monotonic: broad ≥ 7 | improving ≥ 5 | deteriorating = 4 | narrow ≤ 3
+  // 'deteriorating' is the catch-all between narrow and improving.
   const participation: BreadthModule['participation'] =
-    advancingSectors >= 7 ? 'broad' :
-    advancingSectors >= 5 ? 'improving' :
-    advancingSectors <= 3 ? 'narrow' : 'deteriorating'
+    advancingSectors >= BREADTH.BROAD_MIN_SECTORS      ? 'broad' :
+    advancingSectors >= BREADTH.IMPROVING_MIN_SECTORS  ? 'improving' :
+    advancingSectors >  BREADTH.NARROW_MAX_SECTORS     ? 'deteriorating' : 'narrow'
 
-  const breadthConfirmed = !rutLagging && !ewLagging && advancingSectors >= 6
+  const breadthConfirmed = !rutLagging && !ewLagging && advancingSectors >= BREADTH.BREADTH_CONFIRMED_MIN
 
   const breadth: BreadthModule = {
     spx: spxTrend,
@@ -250,17 +256,27 @@ export async function buildMarketCoreSnapshot(): Promise<MarketSnapshot> {
     meta: yahooMeta,
   }
 
+  // NOTE: overallPressure and futuresPressure are inferred from SPX % change — the same
+  // input used for tapeQuality in the breadth module. These signals are circular proxies,
+  // not independent flow data. The regime engine uses a reduced weight for the flow sub-score
+  // until real futures/flow data (e.g. ES1! vs fair value, CME COT) is connected.
   const overallPressure: FlowsModule['overallPressure'] =
-    spxTape > 0.5 ? 'buying' : spxTape < -0.5 ? 'selling' : 'mixed'
+    spxTape > BREADTH.TAPE_RALLY_THRESHOLD   ? 'buying' :
+    spxTape < -BREADTH.TAPE_RALLY_THRESHOLD  ? 'selling' : 'mixed'
 
   const flows: FlowsModule = {
-    etfFlowProxy:       mv(spy ? spy.volume * spy.price / 1e9 : null, null, '$B', v => `~$${v.toFixed(1)}B`, inferredMeta),
+    // etfDollarVolume = SPY dollar trading volume (volume × price). This is NOT fund inflow/outflow.
+    // Positive dollar volume does not imply creation/redemption. Rename reflects honest semantics.
+    etfDollarVolume:    mv(spy ? spy.volume * spy.price / 1e9 : null, null, '$B', v => `~$${v.toFixed(1)}B`, inferredMeta),
+    // Circular proxy — derived from SPX % change, not actual futures positioning
     futuresPressure:    spxTape > 0.3 ? 'buying' : spxTape < -0.3 ? 'selling' : 'neutral',
+    // Not implemented — hardcoded 'balanced'; score contribution disabled in regime engine
     optionsPremiumFlow: 'balanced',
     offExchangeShare:   mv(null, null, '%', v => `${v.toFixed(1)}%`, microstructureMeta),
     blockIntensity:     mv(null, null, '%', v => `${v.toFixed(1)}%`, microstructureMeta),
     sectorRotation:     [],
     overallPressure,
+    // Not implemented — hardcoded 'mixed'; score contribution disabled in regime engine
     demandType:         'mixed',
     meta:               inferredMeta,
   }

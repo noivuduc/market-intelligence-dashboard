@@ -79,12 +79,13 @@ export const MACRO_RELEASES: MacroReleaseMeta[] = [
   {
     series: 'PAYROLLS', name: 'Nonfarm Payrolls', shortName: 'NFP',
     period: 'May 2024', releaseDate: '2024-06-07', fredSeriesId: 'PAYEMS',
-    consensus: 180_000, consensusAsOf: '2024-06-05', unit: 'K', importance: 'high',
+    // PAYEMS is in thousands; MoM delta is ~180 (thousands = 180K jobs), NOT 180_000
+    consensus: 180, consensusAsOf: '2024-06-05', unit: 'K', importance: 'high',
   },
   {
     series: 'PAYROLLS', name: 'Nonfarm Payrolls', shortName: 'NFP',
     period: 'Apr 2024', releaseDate: '2024-05-03', fredSeriesId: 'PAYEMS',
-    consensus: 243_000, consensusAsOf: '2024-05-01', unit: 'K', importance: 'high',
+    consensus: 243, consensusAsOf: '2024-05-01', unit: 'K', importance: 'high',
   },
   {
     series: 'UNEMPLOYMENT', name: 'Unemployment Rate', shortName: 'UNEMP',

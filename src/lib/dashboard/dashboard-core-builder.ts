@@ -3,6 +3,7 @@
 // ============================================================
 
 import { serverCache, CacheKeys, TTL } from '@/lib/cache/server'
+import type { OptionsModule } from '@/lib/types'
 import { buildFedModule } from '@/lib/features/fed'
 import { buildTreasuryModule } from '@/lib/features/treasury'
 import { buildLiquidityModule } from '@/lib/features/liquidity'
@@ -55,7 +56,12 @@ export async function buildDashboardCoreState(): Promise<DashboardState> {
   if (marketResult.status === 'rejected') console.warn('[dashboard-core] Market failed:', marketResult.reason)
   if (treasuryResult.status === 'rejected') console.warn('[dashboard-core] Treasury failed:', treasuryResult.reason)
 
-  const optionsModule = placeholders.options
+  // Use the options module from cache (written by the options lane) when available.
+  // This ensures regime is computed from the same options inputs in both lanes,
+  // preventing the positioning sub-score divergence that causes regime to flicker
+  // between core-lane and options-lane responses.
+  const cachedOptions = serverCache.get<OptionsModule>(CacheKeys.optionsModule())
+  const optionsModule = cachedOptions?.data ?? placeholders.options
   const regime = computeRegime({
     fed: fed as FedPolicyModule,
     liquidity: liquidity as LiquidityModule,

@@ -170,6 +170,33 @@ describe('client-merge', () => {
     })
   })
 
+  // ── Null regime (cold-start guard) ────────────────────────────────────────
+
+  describe('applyOptionsLane — null regime', () => {
+    it('preserves existing regime when options lane returns null regime (cold start)', () => {
+      const s = minimalState()
+      const originalLabel = s.regime.label
+      const next = applyOptionsLane(s, {
+        options: s.options,
+        regime:  null,
+        alerts:  [],
+      })
+      expect(next.regime.label).toBe(originalLabel)
+      expect(next.executive.regime.label).toBe(originalLabel)
+    })
+
+    it('still applies new options when regime is null', () => {
+      const s = minimalState()
+      const liveOptions = { ...s.options, structureAvailable: true, putWall: 5000, callWall: 5400, zeroGamma: null }
+      const next = applyOptionsLane(s, {
+        options: liveOptions,
+        regime:  null,
+        alerts:  [],
+      })
+      expect(next.options.putWall).toBe(5000)
+    })
+  })
+
   // ── Previous data retained on poll ────────────────────────────────────────
 
   describe('applySparklineLane — previous data retained', () => {

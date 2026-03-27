@@ -100,7 +100,7 @@ function placeholderLiquidity(): LiquidityModule {
     reserveBalances:  mv('$T'),
     onRrpUsage:       mv('$T'),
     qtTrend:          'flat',
-    fciNyfed:         mv('index'),
+    fciAdjusted:      mv('index'),
     fciChicago:       mv('index'),
     recessionProb:    mv('%'),
     hySpread:         mv('bps'),
@@ -172,7 +172,7 @@ function placeholderMarket(): MarketSnapshot {
       meta: makeMeta({ ...SOURCES.YAHOO_FINANCE, isFallback: true }),
     },
     flows: {
-      etfFlowProxy:      mv('$B'),
+      etfDollarVolume:   mv('$B'),
       futuresPressure:   'neutral',
       optionsPremiumFlow:'balanced',
       offExchangeShare:  mv('%'),
@@ -218,6 +218,7 @@ function placeholderOrganic(): OrganicVolumeModule {
 function placeholderOptions(): OptionsModule {
   return {
     structureAvailable: false,
+    greeksAvailable:    false,
     putWall:   null,
     callWall:  null,
     zeroGamma: null,

@@ -235,7 +235,7 @@ export interface LiquidityModule {
   reserveBalances:  MetricValue
   onRrpUsage:       MetricValue
   qtTrend:          TrendDirection
-  fciNyfed:         MetricValue
+  fciAdjusted:      MetricValue   // Chicago Fed ANFCI (adjusted NFCI, controls for business cycle)
   fciChicago:       MetricValue
   recessionProb:    MetricValue
   hySpread:         MetricValue
@@ -273,7 +273,7 @@ export interface BreadthModule {
   upVsDownVol:  MetricValue
   newHighs52w:  MetricValue
   newLows52w:   MetricValue
-  sectorBreadth:{ sector: string; pctAbove50d: number }[]
+  sectorBreadth:{ sector: string; rangePosition52w: number }[]
   tapeQuality:  'healthy-rally' | 'weak-rally' | 'fragile-selloff' | 'broad-selloff' | 'mixed'
   participation:'broad' | 'narrow' | 'deteriorating' | 'improving'
   breadthConfirmed: boolean
@@ -282,8 +282,12 @@ export interface BreadthModule {
 }
 
 export interface FlowsModule {
-  etfFlowProxy:      MetricValue
+  etfDollarVolume:   MetricValue   // dollar trading volume proxy — NOT fund inflow/outflow
   futuresPressure:   'buying' | 'selling' | 'neutral'
+  /**
+   * Hardcoded 'balanced' — not yet computed from real data.
+   * Score contribution disabled until a real put/call ratio feed is connected.
+   */
   optionsPremiumFlow:'call-heavy' | 'put-heavy' | 'balanced'
   offExchangeShare:  MetricValue
   blockIntensity:    MetricValue
@@ -320,7 +324,11 @@ export interface OrganicVolumeModule {
 
 export interface GammaLevel {
   strike:        number
-  gammaNotional: number
+  /**
+   * Relative weight for bar sizing. When greeks are available this is |gamma|×OI;
+   * otherwise plain openInterest. NOT dollar-gamma notional (multiply by 100×spot² for that).
+   */
+  relativeWeight: number
   type:          'put-wall' | 'call-wall' | 'gamma-cluster' | 'zero-gamma'
   expiry?:       string
 }
@@ -328,8 +336,11 @@ export interface GammaLevel {
 export interface OptionsModule {
   /** False until OPRA/OCC-backed gamma pipeline is connected */
   structureAvailable:  boolean
+  /** True when per-contract greeks (gamma) were available from the chain source */
+  greeksAvailable:     boolean
   putWall:             number | null
   callWall:            number | null
+  /** Null when greeks unavailable — do not fall back to spot price */
   zeroGamma:           number | null
   gammaLevels:         GammaLevel[]
   dealerPositioning:   'long-gamma' | 'short-gamma' | 'neutral'

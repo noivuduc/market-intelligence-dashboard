@@ -16,7 +16,7 @@ export function applyOptionsLane(
   state: DashboardState,
   body: {
     options: DashboardState['options']
-    regime:  DashboardState['regime']
+    regime:  DashboardState['regime'] | null
     alerts:  DashboardState['alerts']
   },
 ): DashboardState {
@@ -27,6 +27,12 @@ export function applyOptionsLane(
     state.options.structureAvailable && !body.options.structureAvailable
       ? state.options
       : body.options
+
+  // regime is null when server cache was cold (no core lane data yet).
+  // Keep the existing regime rather than overwriting with a placeholder-driven value.
+  if (body.regime === null) {
+    return { ...state, options: nextOptions }
+  }
 
   const whatBreaks =
     body.regime.risks.length > 0

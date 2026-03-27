@@ -150,6 +150,8 @@ export const CacheKeys = {
   macroModule:    () => 'module:macro',
   liquidityModule:() => 'module:liquidity',
   marketModule:   () => 'module:market',
+  /** Built OptionsModule — written by options lane, read by core lane for regime consistency */
+  optionsModule:  () => 'module:options',
   /** Polygon I:SPX option chain snapshot (paginated fetch, cached body) */
   polygonOptionsSnapshot: () => 'polygon:options:snapshot:I:SPX',
   /** Yahoo options chain (cooldown + stale fallback on error) */

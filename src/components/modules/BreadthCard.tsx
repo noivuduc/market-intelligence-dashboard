@@ -158,11 +158,11 @@ export function BreadthCard({ data }: Props) {
                 contentStyle={{ background: '#0D1117', border: '1px solid #1C2636', borderRadius: 4, fontSize: 11 }}
                 formatter={(v: number) => [`${v}%`, '% >50D']}
               />
-              <Bar dataKey="pctAbove50d" radius={[0, 2, 2, 0]}>
+              <Bar dataKey="rangePosition52w" radius={[0, 2, 2, 0]}>
                 {data.sectorBreadth.map((entry, i) => (
                   <Cell
                     key={i}
-                    fill={entry.pctAbove50d >= 60 ? '#3DA85E' : entry.pctAbove50d >= 45 ? '#E89B10' : '#C72019'}
+                    fill={entry.rangePosition52w >= 60 ? '#3DA85E' : entry.rangePosition52w >= 40 ? '#E89B10' : '#C72019'}
                     fillOpacity={0.8}
                   />
                 ))}

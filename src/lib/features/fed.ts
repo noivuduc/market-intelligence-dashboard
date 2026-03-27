@@ -68,6 +68,7 @@ export async function buildFedModule(): Promise<FedPolicyModule> {
     FRED_SERIES.ONRRP,
     FRED_SERIES.BALANCE_SHEET,
     FRED_SERIES.RESERVE_BALANCES,
+    FRED_SERIES.DISCOUNT_RATE,
   ], 10)
 
   // ---- Target range ----
@@ -106,45 +107,61 @@ export async function buildFedModule(): Promise<FedPolicyModule> {
     v => `$${v.toFixed(2)}T`,
   )
 
-  // ---- Derive QT monthly cap from balance sheet trend ----
-  // QT cap is policy-set; we compute actual monthly runoff from balance sheet
+  // ---- QT monthly: actual 4-week balance sheet change ----
+  // WALCL is weekly; 4 observations ≈ 4 calendar weeks (not a full calendar month, but
+  // the most accurate weekly-granularity approximation of a monthly runoff figure).
   const bsSeries = toTimeSeries(series[FRED_SERIES.BALANCE_SHEET] ?? [], true)
   let qtMonthlyActual: number | null = null
   if (bsSeries.length >= 5) {
-    // Last 4 weekly observations ~ 1 month
+    // Use last 5 observations to get a 4-period difference (5 points = 4 intervals = ~4 weeks)
     const recent = bsSeries.slice(-5)
     const diff   = recent[recent.length - 1]!.value - recent[0]!.value
-    qtMonthlyActual = diff / 1_000_000  // convert $M → $T monthly change
+    qtMonthlyActual = diff / 1_000_000  // $M → $T (~4-week change)
   }
   const qtMonthly = buildMetric(
     qtMonthlyActual !== null ? { value: qtMonthlyActual, date: bsCurr?.date ?? '' } : null,
     null,
-    '$T/mo',
-    v => `${v >= 0 ? '+' : ''}$${Math.abs(v).toFixed(2)}T/mo`,
+    '$T/4wk',
+    v => `${v >= 0 ? '+' : ''}$${Math.abs(v).toFixed(2)}T/4wk`,
   )
 
-  // ---- Discount rate (not on FRED separately — use upper target + 50bps) ----
-  const discountRateVal = upper ? upper.value + 0.50 : null
-  const discountRate = buildMetric(
-    discountRateVal !== null ? { value: discountRateVal, date: upper?.date ?? '' } : null,
-    null,
-    '%',
-    v => `${v.toFixed(2)}%`,
-  )
+  // ---- Discount rate: fetch DPCREDIT; fall back to upper+50bps if unavailable ----
+  const [drCurr] = latestTwo(series[FRED_SERIES.DISCOUNT_RATE] ?? [])
+  let discountRate: MetricValue
+  if (drCurr) {
+    discountRate = buildMetric(
+      { value: drCurr.value, date: drCurr.date },
+      null,
+      '%',
+      v => `${v.toFixed(2)}%`,
+    )
+  } else {
+    // Fallback: upper target + 50bps (conventional relationship since 2003, but policy-set)
+    const discountRateVal = upper ? upper.value + 0.50 : null
+    discountRate = buildMetric(
+      discountRateVal !== null ? { value: discountRateVal, date: upper?.date ?? '' } : null,
+      null,
+      '%',
+      v => `${v.toFixed(2)}%`,
+    )
+    if (discountRate.meta) {
+      ;(discountRate as { meta: { caveat?: string } }).meta.caveat =
+        'DPCREDIT unavailable — estimated as FFR upper + 50bps (conventional, not policy-guaranteed).'
+    }
+  }
 
   // ---- FOMC calendar ----
   const nextFomc = getNextFOMC()
   const lastFomc = getLastFOMC()
 
-  // ---- Infer policy stance ----
-  // Simple heuristic: if upper target has been declining, easing drift; if stable, on-hold
+  // ---- Infer policy stance from upper target trend ----
   const upperSeries = toTimeSeries(series[FRED_SERIES.FED_FUNDS_UPPER] ?? [], true)
   let policyStance: FedPolicyModule['policyStance'] = 'on-hold'
   if (upperSeries.length >= 3) {
     const vals = upperSeries.slice(-3).map(p => p.value)
-    const trend = vals[vals.length - 1]! - vals[0]!
-    if (trend < -0.10) policyStance = 'easing'
-    else if (trend > 0.10) policyStance = 'tightening'
+    const trendDiff = vals[vals.length - 1]! - vals[0]!
+    if (trendDiff < -0.10) policyStance = 'easing'
+    else if (trendDiff > 0.10) policyStance = 'tightening'
     else policyStance = 'on-hold'
   }
 
@@ -154,8 +171,6 @@ export async function buildFedModule(): Promise<FedPolicyModule> {
     'neutral'
 
   // ---- Market-implied path (placeholder — requires OIS/Fed Funds futures data) ----
-  // This would require a premium source (Bloomberg, CME FedWatch).
-  // We include the structure but mark as unavailable.
   const marketImpliedPath: FedPolicyModule['marketImpliedPath'] = []
 
   const now = new Date().toISOString()

@@ -5,14 +5,13 @@
 
 import {
   fetchMultiple,
-  latest,
   latestTwo,
   toTimeSeries,
-  parseValue,
   FRED_SERIES,
 } from '@/lib/sources/fred'
 import { makeMeta, SOURCES } from '@/lib/sources/types'
 import { getNextMacroCatalyst, MACRO_RELEASES } from '@/lib/data/macro-calendar'
+import { MACRO } from '@/lib/config/thresholds'
 import type { MacroModule, MacroRelease } from '@/lib/types'
 
 /** YoY % for CPI-style index at a specific ascending-series index (0-based) */
@@ -48,7 +47,84 @@ function computeMoM(series: { date: string; value: number }[]): { date: string; 
   return { date: curr.date, mom: ((curr.value - prev.value) / prev.value) * 100 }
 }
 
+// ---- Stale-consensus guard ----
+// Returns null if the most recent consensus entry for this series is older than CONSENSUS_STALE_DAYS.
+function findConsensus(seriesMatch: string): {
+  consensus: number | null
+  releaseDate: string
+  period: string
+} {
+  const cutoffDate = new Date()
+  cutoffDate.setDate(cutoffDate.getDate() - MACRO.CONSENSUS_STALE_DAYS)
+  const cutoff = cutoffDate.toISOString().split('T')[0]!
+
+  const recent = MACRO_RELEASES
+    .filter(r => r.fredSeriesId === seriesMatch && r.releaseDate >= cutoff)
+    .sort((a, b) => b.releaseDate.localeCompare(a.releaseDate))[0]
+
+  return {
+    consensus:   recent?.consensus ?? null,
+    releaseDate: recent?.releaseDate ?? '',
+    period:      recent?.period ?? '',
+  }
+}
+
+function buildRelease(
+  name:          string,
+  actual:        number | null,
+  dataAsOfDate:  string,
+  period:        string,
+  consensus:     number | null,
+  prior:         number | null,
+  unit:          string,
+  releaseDate?:  string,
+): MacroRelease {
+  const surprise = actual !== null && consensus !== null ? actual - consensus : null
+  return {
+    name,
+    actual,
+    expected: consensus,
+    prior,
+    surprise,
+    date: dataAsOfDate,
+    period,
+    releaseDate: releaseDate || undefined,
+  }
+}
+
+// ---- Z-score surprise normalization ----
+// Historical reference std deviations (approximate, based on 2015-2024 data):
+//   CPI YoY: ±0.25pp typical surprise
+//   Core PCE MoM: ±0.08pp typical surprise
+//   NFP: ±80K (in thousands = ±80)
+const SURPRISE_STD: Record<string, number> = {
+  CPI_YOY:      0.25,
+  CORE_PCE_MOM: 0.08,
+  PAYROLLS:     80,
+}
+
+interface NormalizableSurprise {
+  seriesKey: string
+  surprise:  number | null
+}
+
+function computeSurpriseRegime(surprises: NormalizableSurprise[]): MacroModule['surpriseRegime'] {
+  const zScores: number[] = []
+  for (const s of surprises) {
+    if (s.surprise === null) continue
+    const std = SURPRISE_STD[s.seriesKey]
+    if (!std || std === 0) continue
+    zScores.push(s.surprise / std)
+  }
+  if (zScores.length === 0) return 'neutral'
+  const avgZ = zScores.reduce((a, b) => a + b, 0) / zScores.length
+  if (avgZ > MACRO.SURPRISE_POSITIVE)  return 'positive'
+  if (avgZ < MACRO.SURPRISE_NEGATIVE)  return 'negative'
+  return 'neutral'
+}
+
 export async function buildMacroModule(): Promise<MacroModule> {
+  // Note: MANEMP removed — ISM PMI is not on FRED (MANEMP = manufacturing employment, not PMI)
   const series = await fetchMultiple([
     FRED_SERIES.CPI,
     FRED_SERIES.CORE_CPI,
@@ -65,23 +141,34 @@ export async function buildMacroModule(): Promise<MacroModule> {
   function ts(id: string) { return toTimeSeries(series[id] ?? [], true) }
   function two(id: string) { return latestTwo(series[id] ?? []) }
 
-  // ---- CPI (YoY) — headline vs prior **month** YoY, not core vs headline ----
+  // ---- CPI (YoY) ----
   const cpiSeries = ts(FRED_SERIES.CPI)
   const cpiIdx = cpiSeries.length - 1
   const cpiYoYLatest = cpiIdx >= 12 ? cpiYoYAtIndex(cpiSeries, cpiIdx) : null
   const cpiYoYPrior  = cpiIdx >= 13 ? cpiYoYAtIndex(cpiSeries, cpiIdx - 1) : null
   const cpiAsOfDate  = cpiIdx >= 0 ? cpiSeries[cpiIdx]!.date : ''
 
-  // ---- PCE (MoM) ----
-  const pceSeries     = ts(FRED_SERIES.CORE_PCE)
-  const pceMoM        = computeMoM(pceSeries)
+  // ---- Core PCE (MoM) ----
+  const pceSeries = ts(FRED_SERIES.CORE_PCE)
+  const pceMoM    = computeMoM(pceSeries)
 
   // ---- Payrolls (MoM level change, thousands) ----
-  const [payC, payP]  = two(FRED_SERIES.PAYROLLS)
-  const payrollsMoM   = payC && payP ? payC.value - payP.value : null
+  // PAYEMS is a level series in thousands; diff = monthly job gain/loss (thousands)
+  // prior = previous month's MoM delta, NOT the absolute level
+  const [payC, payP, payPP] = (() => {
+    const all = ts(FRED_SERIES.PAYROLLS)
+    const n = all.length
+    return [
+      n > 0 ? all[n - 1]! : null,
+      n > 1 ? all[n - 2]! : null,
+      n > 2 ? all[n - 3]! : null,
+    ]
+  })()
+  const payrollsMoM       = payC && payP ? payC.value - payP.value : null
+  const payrollsPriorMoM  = payP && payPP ? payP.value - payPP.value : null
 
   // ---- Unemployment ----
-  const [unC, unP]    = two(FRED_SERIES.UNEMPLOYMENT)
+  const [unC, unP] = two(FRED_SERIES.UNEMPLOYMENT)
 
   // ---- Initial Claims ----
   const [claimsC, claimsP] = two(FRED_SERIES.CLAIMS_INIT)
@@ -90,58 +177,19 @@ export async function buildMacroModule(): Promise<MacroModule> {
   const [gdpC, gdpP] = two(FRED_SERIES.GDP_PCT_QOQ_SAAR)
 
   // ---- Retail Sales (MoM) ----
-  const retSeries     = ts(FRED_SERIES.RETAIL_SALES)
-  const retMoM        = computeMoM(retSeries)
+  const retSeries = ts(FRED_SERIES.RETAIL_SALES)
+  const retMoM    = computeMoM(retSeries)
 
-  // ---- Combine with consensus from calendar ----
-
-  function findConsensus(seriesMatch: string): {
-    consensus: number | null
-    releaseDate: string
-    period: string
-  } {
-    const recent = MACRO_RELEASES
-      .filter(r => r.fredSeriesId === seriesMatch)
-      .sort((a, b) => b.releaseDate.localeCompare(a.releaseDate))[0]
-    return {
-      consensus:   recent?.consensus ?? null,
-      releaseDate: recent?.releaseDate ?? '',
-      period:      recent?.period ?? '',
-    }
-  }
-
-  function buildRelease(
-    name:          string,
-    actual:        number | null,
-    dataAsOfDate:  string,
-    period:        string,
-    consensus:     number | null,
-    prior:         number | null,
-    unit:          string,
-    releaseDate?:  string,
-  ): MacroRelease {
-    const surprise = actual !== null && consensus !== null ? actual - consensus : null
-    return {
-      name,
-      actual,
-      expected: consensus,
-      prior,
-      surprise,
-      date: dataAsOfDate,
-      period,
-      releaseDate: releaseDate || undefined,
-    }
-  }
-
-  const cpiConsensus   = findConsensus(FRED_SERIES.CPI)
-  const payrollsCons   = findConsensus(FRED_SERIES.PAYROLLS)
-  const pceConsensus   = findConsensus(FRED_SERIES.CORE_PCE)
-  const gdpConsensus   = findConsensus(FRED_SERIES.GDP_PCT_QOQ_SAAR)
+  // ---- Consensus (with stale-guard — returns null if entry > 90 days old) ----
+  const cpiConsensus    = findConsensus(FRED_SERIES.CPI)
+  const payrollsCons    = findConsensus(FRED_SERIES.PAYROLLS)
+  const pceConsensus    = findConsensus(FRED_SERIES.CORE_PCE)
+  const gdpConsensus    = findConsensus(FRED_SERIES.GDP_PCT_QOQ_SAAR)
 
   const cpiPeriodLabel = referenceLabelFromFREDMonth(cpiAsOfDate)
 
-  // ---- Macro releases ----
-  const cpi          = buildRelease(
+  // ---- Build releases ----
+  const cpi = buildRelease(
     'CPI YoY',
     cpiYoYLatest,
     cpiAsOfDate,
@@ -151,7 +199,7 @@ export async function buildMacroModule(): Promise<MacroModule> {
     '%',
     cpiConsensus.releaseDate || undefined,
   )
-  const pce          = buildRelease(
+  const pce = buildRelease(
     'Core PCE MoM',
     pceMoM?.mom ?? null,
     pceMoM?.date ?? '',
@@ -161,13 +209,14 @@ export async function buildMacroModule(): Promise<MacroModule> {
     '%',
     pceConsensus.releaseDate || undefined,
   )
-  const payrolls     = buildRelease(
+  const payrolls = buildRelease(
     'Nonfarm Payrolls',
     payrollsMoM,
     payC?.date ?? '',
     referenceLabelFromFREDMonth(payC?.date ?? ''),
     payrollsCons.consensus,
-    payP?.value ?? null,
+    // prior = previous MoM delta (also in thousands), not absolute level
+    payrollsPriorMoM,
     'K',
     payrollsCons.releaseDate || undefined,
   )
@@ -189,7 +238,7 @@ export async function buildMacroModule(): Promise<MacroModule> {
     claimsP?.value ?? null,
     'K',
   )
-  const retailSales  = buildRelease(
+  const retailSales = buildRelease(
     'Retail Sales ex-Auto MoM',
     retMoM?.mom ?? null,
     retMoM?.date ?? '',
@@ -198,7 +247,7 @@ export async function buildMacroModule(): Promise<MacroModule> {
     null,
     '%',
   )
-  const gdp          = buildRelease(
+  const gdp = buildRelease(
     'GDP QoQ SAAR',
     gdpC?.value ?? null,
     gdpC?.date ?? '',
@@ -208,39 +257,36 @@ export async function buildMacroModule(): Promise<MacroModule> {
     '%',
     gdpConsensus.releaseDate || undefined,
   )
-  const ismMfg       = buildRelease('ISM Mfg PMI',        null, '', 'Latest', 50.0, null, 'index')  // Not on FRED
-  const ismSvc       = buildRelease('ISM Svc PMI',        null, '', 'Latest', 51.0, null, 'index')
 
-  // ---- Derive regime labels ----
+  // ISM PMI: not available on FRED. Explicitly marked as unavailable.
+  // Do NOT show hardcoded 50/51 as fake consensus — that misleads users.
+  const ismMfg = buildRelease('ISM Mfg PMI', null, '', 'Unavailable', null, null, 'index')
+  const ismSvc = buildRelease('ISM Svc PMI', null, '', 'Unavailable', null, null, 'index')
 
-  // Growth: GDP + payrolls trend
+  // ---- Regime derivation ----
   const gdpTrend = gdpC?.value ?? 2.0
   const growthTrend: MacroModule['growthTrend'] =
-    gdpTrend > 2.5 ? 'accelerating' :
-    gdpTrend > 1.0 ? 'stable' :
-    gdpTrend > 0   ? 'decelerating' : 'contraction'
+    gdpTrend > MACRO.GDP_ACCELERATING ? 'accelerating' :
+    gdpTrend > MACRO.GDP_STABLE       ? 'stable' :
+    gdpTrend > 0                      ? 'decelerating' : 'contraction'
 
-  // Inflation: CPI YoY trend
   const cpiVal = cpiYoYLatest ?? 3.0
   const inflationTrend: MacroModule['inflationTrend'] =
-    cpiVal > 4.0 ? 'rising' :
-    cpiVal > 3.0 ? 'sticky' :
-    cpiVal > 2.0 ? 'falling' : 'stable'
+    cpiVal > MACRO.CPI_RISING  ? 'rising' :
+    cpiVal > MACRO.CPI_STICKY  ? 'sticky' :
+    cpiVal > MACRO.CPI_FALLING ? 'falling' : 'stable'
 
-  // Labor: unemployment + claims
   const unRate = unC?.value ?? 4.0
   const laborTrend: MacroModule['laborTrend'] =
-    unRate < 3.8 ? 'strong' :
-    unRate < 4.5 ? 'softening' : 'weak'
+    unRate < MACRO.UNEMP_STRONG    ? 'strong' :
+    unRate < MACRO.UNEMP_SOFTENING ? 'softening' : 'weak'
 
-  // Surprise regime: compare actuals to consensus
-  const surprises = [cpi, pce, payrolls].filter(r => r.surprise !== null)
-  const avgSurprise = surprises.length
-    ? surprises.reduce((s, r) => s + (r.surprise ?? 0), 0) / surprises.length
-    : 0
-  const surpriseRegime: MacroModule['surpriseRegime'] =
-    avgSurprise > 0.1  ? 'positive' :
-    avgSurprise < -0.1 ? 'negative' : 'neutral'
+  // ---- Surprise regime using z-score normalization to avoid unit-mixing ----
+  const surpriseRegime = computeSurpriseRegime([
+    { seriesKey: 'CPI_YOY',      surprise: cpi.surprise },
+    { seriesKey: 'CORE_PCE_MOM', surprise: pce.surprise },
+    { seriesKey: 'PAYROLLS',     surprise: payrolls.surprise },
+  ])
 
   const nextCatalyst = getNextMacroCatalyst()
 
@@ -253,7 +299,7 @@ export async function buildMacroModule(): Promise<MacroModule> {
     surpriseRegime, nextCatalyst,
     meta: makeMeta({
       ...SOURCES.FRED,
-      caveat: 'Macro prints use FRED observation dates as data as-of. Static consensus rows in macro-calendar.ts must be updated before each release; otherwise surprise vs est. may be stale.',
+      caveat: 'Macro prints use FRED observation dates as data as-of. Consensus entries older than 90 days are discarded. ISM PMI not available on FRED — marked unavailable.',
     }, now),
   }
 }

@@ -10,6 +10,7 @@
 // ============================================================
 
 import type { BreadthModule, FlowsModule, TrendDirection } from '@/lib/types'
+import { BREADTH } from '@/lib/config/thresholds'
 
 // ── Output type ───────────────────────────────────────────────────────────────
 
@@ -24,9 +25,9 @@ export interface ProxyInternals {
   ewStatus:  'stable' | 'watch' | 'elevated'
   ewDetail:  string
 
-  // Sector breadth counts (derived from pctAbove50d proxy)
-  sectorAdvancing: number   // pctAbove50d >= 55
-  sectorDeclining: number   // pctAbove50d <= 45
+  // Sector breadth counts (derived from rangePosition52w proxy)
+  sectorAdvancing: number   // rangePosition52w >= 60
+  sectorDeclining: number   // rangePosition52w <= 40
   sectorNeutral:   number
   sectorTotal:     number
   topSectors:      string[]  // top 3 advancing sector names
@@ -76,8 +77,8 @@ export function buildProxyInternals(
   // ── Sector counts ─────────────────────────────────────────────────────────
   const sectors   = breadth.sectorBreadth
   const total     = sectors.length
-  const advancing = sectors.filter(s => s.pctAbove50d >= 55)
-  const declining = sectors.filter(s => s.pctAbove50d <= 45)
+  const advancing = sectors.filter(s => s.rangePosition52w >= BREADTH.ADVANCING_THRESHOLD)
+  const declining = sectors.filter(s => s.rangePosition52w <= BREADTH.DECLINING_THRESHOLD)
   const neutral   = total - advancing.length - declining.length
 
   const topSectors  = advancing.slice(0, 3).map(s => s.sector)
@@ -92,22 +93,22 @@ export function buildProxyInternals(
     case 'broad':
       participationLabel  = 'BROAD'
       participationStatus = 'stable'
-      participationDetail = `${advancing.length}/${total} sectors above 50d proxy — healthy participation`
+      participationDetail = `${advancing.length}/${total} sectors in upper 52w range — healthy participation`
       break
     case 'improving':
       participationLabel  = 'IMPROVING'
       participationStatus = 'stable'
-      participationDetail = `${advancing.length}/${total} sectors advancing — breadth building`
+      participationDetail = `${advancing.length}/${total} sectors in upper range — breadth building`
       break
     case 'narrow':
       participationLabel  = 'NARROW'
       participationStatus = 'watch'
-      participationDetail = `Only ${advancing.length}/${total} sectors advancing — leadership concentrated`
+      participationDetail = `Only ${advancing.length}/${total} sectors in upper range — leadership concentrated`
       break
     default:
       participationLabel  = 'DETERIORATING'
       participationStatus = 'elevated'
-      participationDetail = `${declining.length}/${total} sectors declining — breadth deteriorating`
+      participationDetail = `${declining.length}/${total} sectors in lower range — breadth deteriorating`
   }
 
   // ── Equal-weight confirmation ─────────────────────────────────────────────

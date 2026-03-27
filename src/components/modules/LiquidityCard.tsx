@@ -75,7 +75,7 @@ export function LiquidityCard({ data }: Props) {
         <MetricRow label="HY OAS"          value={data.hySpread.formatted ?? ''}  change={data.hySpread.change}  source="observed" />
         <MetricRow label="IG OAS"          value={data.igSpread.formatted ?? ''}  change={data.igSpread.change}  source="observed" />
         <MetricRow label="NFCI"            value={data.fciChicago.formatted ?? ''} change={data.fciChicago.change} source="observed" note="Chicago Fed" />
-        <MetricRow label="ANFCI"           value={data.fciNyfed.formatted ?? ''}   change={data.fciNyfed.change}  source="observed" note="adj. NFCI" />
+        <MetricRow label="ANFCI"           value={data.fciAdjusted.formatted ?? ''}   change={data.fciAdjusted.change}  source="observed" note="adj. NFCI" />
         <MetricRow label="Recession Prob"  value={data.recessionProb.formatted ?? ''} source="derived" />
       </div>
 

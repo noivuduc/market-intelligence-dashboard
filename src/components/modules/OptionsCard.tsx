@@ -34,7 +34,7 @@ function CorridorMap({
   gammaLevels,
 }: {
   putWall:     number
-  zeroGamma:   number
+  zeroGamma:   number | null
   callWall:    number
   spotPrice:   number
   gammaLevels: GammaLevel[]
@@ -51,11 +51,11 @@ function CorridorMap({
 
   const putPct  = pct(putWall)
   const callPct = pct(callWall)
-  const zgPct   = pct(zeroGamma)
+  const zgPct   = zeroGamma != null ? pct(zeroGamma) : null
   const spotPct = pct(spotPrice)
 
   const clusters    = gammaLevels.filter(g => g.type === 'gamma-cluster')
-  const maxClusterG = clusters.reduce((m, g) => Math.max(m, g.gammaNotional), 1)
+  const maxClusterG = clusters.reduce((m, g) => Math.max(m, g.relativeWeight), 1)
 
   // Dashed line as repeating-gradient (CSS border-dashed unreliable on zero-width divs)
   const dashedAmber: React.CSSProperties = {
@@ -102,7 +102,7 @@ function CorridorMap({
         {/* Gamma cluster bars — bottom-anchored */}
         {clusters.map((g, i) => {
           const p = pct(g.strike)
-          const h = Math.max(6, Math.round((g.gammaNotional / maxClusterG) * 30))
+          const h = Math.max(6, Math.round((g.relativeWeight / maxClusterG) * 30))
           return (
             <div
               key={i}
@@ -122,11 +122,13 @@ function CorridorMap({
           className="absolute inset-y-0 w-px bg-tac-600/80"
           style={{ left: `${callPct}%` }}
         />
-        {/* Zero gamma — dashed */}
-        <div
-          className="absolute inset-y-0"
-          style={{ left: `${zgPct}%`, ...dashedAmber }}
-        />
+        {/* Zero gamma — dashed (only when greeks available) */}
+        {zgPct != null && (
+          <div
+            className="absolute inset-y-0"
+            style={{ left: `${zgPct}%`, ...dashedAmber }}
+          />
+        )}
 
         {/* Spot line */}
         <div
@@ -158,13 +160,15 @@ function CorridorMap({
           {fmtStrike(callWall)}
         </div>
 
-        {/* Zero gamma label — centered below dashed line */}
-        <div
-          className="absolute bottom-1 text-2xs font-mono text-amber-500/70 whitespace-nowrap -translate-x-1/2"
-          style={{ left: `${zgPct}%` }}
-        >
-          {fmtStrike(zeroGamma)}
-        </div>
+        {/* Zero gamma label — centered below dashed line (only when greeks available) */}
+        {zgPct != null && zeroGamma != null && (
+          <div
+            className="absolute bottom-1 text-2xs font-mono text-amber-500/70 whitespace-nowrap -translate-x-1/2"
+            style={{ left: `${zgPct}%` }}
+          >
+            {fmtStrike(zeroGamma)}
+          </div>
+        )}
 
         {/* Zone micro-labels in margins */}
         <div className="absolute bottom-1 left-1 text-[0.53rem] font-mono uppercase tracking-widest text-crit-700/60 select-none pointer-events-none">
@@ -178,12 +182,12 @@ function CorridorMap({
       {/* Legend strip */}
       <div className="flex items-center gap-4 mt-1.5 mb-4">
         {([
-          { cls: 'bg-crit-600/80',    label: 'Put Wall' },
-          { cls: 'bg-ink-primary',    label: 'Spot' },
-          { cls: 'bg-amber-600/55',   label: 'Zero Gamma' },
-          { cls: 'bg-tac-600/80',     label: 'Call Wall' },
-          { cls: 'bg-steel-600/40',   label: 'Cluster' },
-        ] as const).map(({ cls, label }) => (
+          { cls: 'bg-crit-600/80',    label: 'Put Wall',    show: true },
+          { cls: 'bg-ink-primary',    label: 'Spot',        show: true },
+          { cls: 'bg-amber-600/55',   label: 'Zero Gamma',  show: zeroGamma != null },
+          { cls: 'bg-tac-600/80',     label: 'Call Wall',   show: true },
+          { cls: 'bg-steel-600/40',   label: 'Cluster',     show: true },
+        ] as const).filter(e => e.show).map(({ cls, label }) => (
           <div key={label} className="flex items-center gap-1">
             <div className={clsx('w-px h-3 rounded-full', cls)} />
             <span className="text-2xs text-ink-ghost">{label}</span>
@@ -205,7 +209,7 @@ function CorridorMap({
 function DistancePills({
   putWall, zeroGamma, callWall, spotPrice,
 }: {
-  putWall: number; zeroGamma: number; callWall: number; spotPrice: number
+  putWall: number; zeroGamma: number | null; callWall: number; spotPrice: number
 }) {
   const pills = [
     {
@@ -218,16 +222,16 @@ function DistancePills({
       bg:        'bg-crit-900/12',
       strikeClr: 'text-crit-400',
     },
-    {
+    ...(zeroGamma != null ? [{
       key:       'zg',
       label:     'ZERO GAMMA',
       strike:    fmtStrike(zeroGamma),
       delta:     spotPrice - zeroGamma,
-      safe:      null, // neutral
+      safe:      null as null, // neutral
       border:    'border-amber-800/50',
       bg:        'bg-amber-900/12',
       strikeClr: 'text-amber-400',
-    },
+    }] : []),
     {
       key:       'call',
       label:     'CALL WALL',
@@ -240,8 +244,10 @@ function DistancePills({
     },
   ]
 
+  const gridCols = zeroGamma != null ? 'grid-cols-3' : 'grid-cols-2'
+
   return (
-    <div className="grid grid-cols-3 gap-2 mb-4 pb-4 border-b border-ops-700">
+    <div className={`grid ${gridCols} gap-2 mb-4 pb-4 border-b border-ops-700`}>
       {pills.map(p => (
         <div
           key={p.key}
@@ -278,7 +284,7 @@ function getStructuralSummary(
   dealer:    OptionsModule['dealerPositioning'],
   putWall:   number,
   callWall:  number,
-  zeroGamma: number,
+  zeroGamma: number | null,
   spot:      number,
 ) {
   const tape =
@@ -297,14 +303,22 @@ function getStructuralSummary(
 
   const distPut  = Math.abs(spot - putWall)
   const distCall = Math.abs(callWall - spot)
-  const distZG   = Math.abs(spot - zeroGamma)
 
-  const nearestName =
-    distPut <= distCall && distPut <= distZG ? 'PUT WALL' :
-    distCall <= distZG                        ? 'CALL WALL' : 'ZERO GAMMA'
-  const nearestDelta =
-    nearestName === 'PUT WALL'   ? spot - putWall :
-    nearestName === 'CALL WALL'  ? callWall - spot : spot - zeroGamma
+  let nearestName: string
+  let nearestDelta: number
+
+  if (zeroGamma != null) {
+    const distZG = Math.abs(spot - zeroGamma)
+    nearestName =
+      distPut <= distCall && distPut <= distZG ? 'PUT WALL' :
+      distCall <= distZG                        ? 'CALL WALL' : 'ZERO GAMMA'
+    nearestDelta =
+      nearestName === 'PUT WALL'  ? spot - putWall :
+      nearestName === 'CALL WALL' ? callWall - spot : spot - zeroGamma
+  } else {
+    nearestName  = distPut <= distCall ? 'PUT WALL' : 'CALL WALL'
+    nearestDelta = nearestName === 'PUT WALL' ? spot - putWall : callWall - spot
+  }
 
   return { tape, flipCondition, nearestName, nearestDelta }
 }
@@ -335,11 +349,11 @@ function getBehavioralDesc(key: string, val: 'high' | 'moderate' | 'low'): strin
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function OptionsCard({ data, spotPrice = 5305 }: Props) {
+  // zeroGamma may be null when greeks are unavailable — that's fine, card still shows
   const hasLive =
     data.structureAvailable &&
-    data.putWall   != null &&
-    data.callWall  != null &&
-    data.zeroGamma != null
+    data.putWall  != null &&
+    data.callWall != null
 
   // ── Unavailable state ──
   if (!hasLive) {
@@ -373,7 +387,7 @@ export function OptionsCard({ data, spotPrice = 5305 }: Props) {
 
   const putWall   = data.putWall!
   const callWall  = data.callWall!
-  const zeroGamma = data.zeroGamma!
+  const zeroGamma = data.zeroGamma  // null when greeks unavailable
 
   const dealerStatus =
     data.dealerPositioning === 'long-gamma'  ? 'stable'   :

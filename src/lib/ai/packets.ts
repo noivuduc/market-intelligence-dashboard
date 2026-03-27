@@ -158,7 +158,7 @@ export function buildLiquidityPacket(liq: LiquidityModule): FeaturePacket {
       reserve_balances:   { value: liq.reserveBalances.formatted ?? '—',unit: '$T', trend: liq.reserveBalances.trend },
       on_rrp_usage:       { value: liq.onRrpUsage.formatted ?? '—',    unit: '$T', trend: liq.onRrpUsage.trend },
       hy_spread:          { value: liq.hySpread.formatted ?? '—',       unit: 'bps', change: formatChange(liq.hySpread.change, 'bps'), trend: liq.hySpread.trend },
-      nfci:               { value: liq.fciNyfed.formatted ?? '—',       unit: 'index', trend: liq.fciNyfed.trend },
+      anfci:              { value: liq.fciAdjusted.formatted ?? '—',     unit: 'index', trend: liq.fciAdjusted.trend },
       vix:                { value: liq.vix?.formatted ?? '—',           unit: 'index', trend: liq.vix?.trend },
       vulnerability_score:{ value: String(liq.vulnerabilityScore),      unit: '/100' },
     },
@@ -169,7 +169,7 @@ export function buildLiquidityPacket(liq: LiquidityModule): FeaturePacket {
       vol_stress:       liq.volStress,
     },
     topDrivers: [
-      `Liquidity: ${liq.liquidityStance} — NFCI ${liq.fciChicago.formatted} · ANFCI ${liq.fciNyfed.formatted}`,
+      `Liquidity: ${liq.liquidityStance} — NFCI ${liq.fciChicago.formatted} · ANFCI-adj ${liq.fciAdjusted.formatted}`,
       `Reserve balances at ${liq.reserveBalances.formatted} (trend: ${liq.reserveBalances.trend})`,
       `HY OAS at ${liq.hySpread.formatted} — credit stress: ${liq.creditStress}`,
     ],
@@ -189,7 +189,7 @@ function formatBreadthDayChange(pct: number | null | undefined): string {
 }
 
 export function buildBreadthPacket(b: BreadthModule): FeaturePacket {
-  const advSectors = b.sectorBreadth.filter(s => s.pctAbove50d >= 60).length
+  const advSectors = b.sectorBreadth.filter(s => s.rangePosition52w >= 60).length
   const spxCh = b.spx.change1d
   const ndxCh = b.ndx.change1d
   const rutCh = b.rut.change1d

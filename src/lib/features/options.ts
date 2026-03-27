@@ -2,6 +2,16 @@
 // OPTIONS MODULE — derived from Polygon or Yahoo chain snapshot
 // Walls / zero-gamma / dealer heuristics are approximations;
 // meta.caveat documents limitations vs full OPRA GEX engines.
+//
+// SIGN CONVENTION:
+//  - put wall (max put OI): dealer sold puts → dealers are LONG delta/LONG gamma
+//    at this level. Spot approaching put wall = stabilising support, NOT short gamma.
+//  - call wall (max call OI): dealer sold calls → dealers are SHORT delta near expiry.
+//    Spot approaching call wall = capping resistance. Being near the call wall can
+//    indicate dealer short gamma (must buy rallies to hedge).
+//  - zero-gamma: strike of maximum |gamma|×OI. Requires per-contract greeks.
+//    When greeks are unavailable (Yahoo source), zeroGamma = null. Do NOT fall
+//    back to spot price — that creates false precision.
 // ============================================================
 
 import { makeMeta, SOURCES } from '@/lib/sources/types'
@@ -11,12 +21,13 @@ import type {
   OptionsChainProvider,
   SpxOptionChainSnapshot,
 } from '@/lib/sources/option-chain-types'
+import { OPTIONS } from '@/lib/config/thresholds'
 
 const CAVEAT_POLYGON =
-  'Derived from Polygon open interest and per-contract greeks when present. Not a full dealer GEX model; zero-gamma is a heuristic (max |γ|×OI strike), not exchange-reported. Verify vs your risk stack.'
+  'Derived from Polygon open interest and per-contract greeks when present. Not a full dealer GEX model; zero-gamma is the max |γ|×OI strike, not exchange-reported. Verify vs your risk stack.'
 
 const CAVEAT_YAHOO =
-  'Derived from Yahoo Finance option chain (unofficial API). OI may be delayed; greeks are often absent — zero-gamma falls back to spot or midpoint heuristics. Not a full dealer GEX model. Verify vs your risk stack.'
+  'Derived from Yahoo Finance option chain (unofficial API). OI may be delayed; greeks absent — zero-gamma set to null (not estimated from spot). Not a full dealer GEX model. Verify vs your risk stack.'
 
 function aggregateByStrike(contracts: NormalizedOptionContract[]) {
   const putOi = new Map<number, number>()
@@ -24,11 +35,13 @@ function aggregateByStrike(contracts: NormalizedOptionContract[]) {
   const putGammaOi = new Map<number, number>()
   const callGammaOi = new Map<number, number>()
   const expiryOi = new Map<string, number>()
+  let greeksPresent = false
 
   for (const c of contracts) {
     const map = c.contractType === 'put' ? putOi : callOi
     map.set(c.strike, (map.get(c.strike) ?? 0) + c.openInterest)
     if (c.gamma != null) {
+      greeksPresent = true
       const gm = c.contractType === 'put' ? putGammaOi : callGammaOi
       const add = Math.abs(c.gamma) * c.openInterest
       gm.set(c.strike, (gm.get(c.strike) ?? 0) + add)
@@ -36,7 +49,7 @@ function aggregateByStrike(contracts: NormalizedOptionContract[]) {
     expiryOi.set(c.expirationDate, (expiryOi.get(c.expirationDate) ?? 0) + c.openInterest)
   }
 
-  return { putOi, callOi, putGammaOi, callGammaOi, expiryOi }
+  return { putOi, callOi, putGammaOi, callGammaOi, expiryOi, greeksPresent }
 }
 
 function strikeOfMaxOi(m: Map<number, number>): number | null {
@@ -76,9 +89,7 @@ function thirdFridayUtc(isoDate: string): boolean {
   return day >= 15 && day <= 21
 }
 
-function expiryImportance(
-  isoDate: string,
-): 'monthly' | 'weekly' | 'quarterly' {
+function expiryImportance(isoDate: string): 'monthly' | 'weekly' | 'quarterly' {
   const d = new Date(`${isoDate}T12:00:00.000Z`)
   const m = d.getUTCMonth()
   const isQuarterlyMonth = m === 2 || m === 5 || m === 8 || m === 11
@@ -131,6 +142,7 @@ export function buildOptionsModuleFromChain(
   if (snapshot.contracts.length === 0) {
     return {
       structureAvailable: false,
+      greeksAvailable:    false,
       putWall: null,
       callWall: null,
       zeroGamma: null,
@@ -148,12 +160,15 @@ export function buildOptionsModuleFromChain(
     }
   }
 
-  const { putOi, callOi, putGammaOi, callGammaOi, expiryOi } = aggregateByStrike(snapshot.contracts)
+  const { putOi, callOi, putGammaOi, callGammaOi, expiryOi, greeksPresent } =
+    aggregateByStrike(snapshot.contracts)
+
   const putWall = strikeOfMaxOi(putOi)
   const callWall = strikeOfMaxOi(callOi)
   if (putWall == null || callWall == null) {
     return {
       structureAvailable: false,
+      greeksAvailable:    greeksPresent,
       putWall: null,
       callWall: null,
       zeroGamma: null,
@@ -171,91 +186,106 @@ export function buildOptionsModuleFromChain(
     }
   }
 
-  const zgFromGreeks = strikeOfMaxGammaOi(putGammaOi, callGammaOi)
+  // ---- Zero-gamma ----
+  // Only derive from greeks when present. Do NOT fall back to spot price —
+  // that produces false precision ("ZG at spot" is meaningless).
+  const zgFromGreeks = greeksPresent ? strikeOfMaxGammaOi(putGammaOi, callGammaOi) : null
+  const zeroGamma: number | null = zgFromGreeks ?? null
+
   const spot =
     spotPrice != null && Number.isFinite(spotPrice) && spotPrice > 0
       ? spotPrice
       : snapshot.underlyingPrice
-  let zeroGamma: number
-  if (zgFromGreeks != null) {
-    zeroGamma = zgFromGreeks
-  } else if (spot != null && Number.isFinite(spot)) {
-    zeroGamma = Math.round(spot)
-  } else {
-    zeroGamma = Math.round((putWall + callWall) / 2)
-  }
 
-  const putOiAtWall = putOi.get(putWall) ?? 0
+  // ---- Build gamma level chart ----
+  const putOiAtWall  = putOi.get(putWall) ?? 0
   const callOiAtWall = callOi.get(callWall) ?? 0
-  const zgGamma =
-    (putGammaOi.get(zeroGamma) ?? 0) + (callGammaOi.get(zeroGamma) ?? 0)
-  const zgOiFallback = Math.max(
-    putOi.get(zeroGamma) ?? 0,
-    callOi.get(zeroGamma) ?? 0,
-    1,
-  )
+
   const gammaLevels: GammaLevel[] = [
     {
       strike: putWall,
-      gammaNotional: putOiAtWall,
+      relativeWeight: greeksPresent
+        ? (putGammaOi.get(putWall) ?? 0) + (callGammaOi.get(putWall) ?? 0)
+        : putOiAtWall,
       type: 'put-wall',
     },
     {
       strike: callWall,
-      gammaNotional: callOiAtWall,
+      relativeWeight: greeksPresent
+        ? (putGammaOi.get(callWall) ?? 0) + (callGammaOi.get(callWall) ?? 0)
+        : callOiAtWall,
       type: 'call-wall',
-    },
-    {
-      strike: zeroGamma,
-      gammaNotional: zgGamma > 0 ? zgGamma : zgOiFallback,
-      type: 'zero-gamma',
     },
   ]
 
-  const scoreByStrike = new Map<number, number>()
-  for (const [k, v] of putGammaOi) scoreByStrike.set(k, (scoreByStrike.get(k) ?? 0) + v)
-  for (const [k, v] of callGammaOi) scoreByStrike.set(k, (scoreByStrike.get(k) ?? 0) + v)
-  const ranked = [...scoreByStrike.entries()]
-    .filter(([k]) => k !== putWall && k !== callWall && k !== zeroGamma)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 4)
-  for (const [strike, g] of ranked) {
-    gammaLevels.push({ strike, gammaNotional: g, type: 'gamma-cluster' })
+  if (zeroGamma != null) {
+    const zgWeight =
+      (putGammaOi.get(zeroGamma) ?? 0) + (callGammaOi.get(zeroGamma) ?? 0)
+    gammaLevels.push({
+      strike: zeroGamma,
+      relativeWeight: zgWeight > 0 ? zgWeight : Math.max(putOi.get(zeroGamma) ?? 0, callOi.get(zeroGamma) ?? 0, 1),
+      type: 'zero-gamma',
+    })
   }
 
+  // Additional gamma clusters (greeks-only; OI clusters otherwise)
+  if (greeksPresent) {
+    const scoreByStrike = new Map<number, number>()
+    for (const [k, v] of putGammaOi)  scoreByStrike.set(k, (scoreByStrike.get(k) ?? 0) + v)
+    for (const [k, v] of callGammaOi) scoreByStrike.set(k, (scoreByStrike.get(k) ?? 0) + v)
+    const excluded = new Set([putWall, callWall, ...(zeroGamma != null ? [zeroGamma] : [])])
+    const ranked = [...scoreByStrike.entries()]
+      .filter(([k]) => !excluded.has(k))
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 4)
+    for (const [strike, g] of ranked) {
+      gammaLevels.push({ strike, relativeWeight: g, type: 'gamma-cluster' })
+    }
+  }
+
+  // ---- Dealer positioning ----
+  // Sign convention:
+  //  - near PUT wall:  dealers absorbed put selling → long gamma at this level (stabilising)
+  //  - near CALL wall: dealers short calls → short delta; near expiry can be short gamma (capping)
+  //  - inside corridor (put < spot < call), away from walls: dealers long gamma (range-bound)
   let dealerPositioning: OptionsModule['dealerPositioning'] = 'neutral'
-  let pinningRisk: OptionsModule['pinningRisk'] = 'moderate'
-  let airPocketRisk: OptionsModule['airPocketRisk'] = 'moderate'
-  let breakoutSensitivity: OptionsModule['breakoutSensitivity'] = 'moderate'
+  let pinningRisk:        OptionsModule['pinningRisk']        = 'moderate'
+  let airPocketRisk:      OptionsModule['airPocketRisk']      = 'moderate'
+  let breakoutSensitivity:OptionsModule['breakoutSensitivity']= 'moderate'
 
   if (spot != null && Number.isFinite(spot) && spot > 0) {
     const lo = Math.min(putWall, callWall)
     const hi = Math.max(putWall, callWall)
-    const mid = (lo + hi) / 2
-    const distPut = Math.abs(spot - putWall) / spot
-    const distCall = Math.abs(spot - callWall) / spot
-    const nearWall = Math.min(distPut, distCall)
+    const distToPut  = Math.abs(spot - putWall)  / spot
+    const distToCall = Math.abs(spot - callWall) / spot
+    const nearestWall = Math.min(distToPut, distToCall)
 
-    if (nearWall < 0.0025) pinningRisk = 'high'
-    else if (nearWall < 0.006) pinningRisk = 'moderate'
+    // Pinning risk = proximity to EITHER wall (both walls create pinning dynamics)
+    if (nearestWall < OPTIONS.PIN_HIGH_DIST)    pinningRisk = 'high'
+    else if (nearestWall < OPTIONS.PIN_MODERATE_DIST) pinningRisk = 'moderate'
     else pinningRisk = 'low'
 
-    if (nearWall < 0.004) {
-      dealerPositioning = 'short-gamma'
-      airPocketRisk = 'high'
+    if (distToCall < OPTIONS.CALL_WALL_SHORT_GAMMA_DIST) {
+      // Near call wall: dealers short calls → short gamma heading higher
+      dealerPositioning   = 'short-gamma'
+      airPocketRisk       = 'high'
       breakoutSensitivity = 'high'
-    } else if (nearWall > 0.012 && spot > lo && spot < hi) {
-      dealerPositioning = 'long-gamma'
-      airPocketRisk = 'low'
+    } else if (distToPut < OPTIONS.PUT_WALL_SUPPORT_DIST && spot > lo) {
+      // Near put wall but above it: stabilising dealer support dynamics
+      dealerPositioning   = 'neutral'   // not short gamma at put wall
+      airPocketRisk       = 'moderate'
       breakoutSensitivity = 'low'
-    } else if (spot > mid && nearWall > 0.008) {
-      airPocketRisk = 'moderate'
-      breakoutSensitivity = 'moderate'
+    } else if (spot > lo && spot < hi && nearestWall > OPTIONS.CORRIDOR_LONG_GAMMA_DIST) {
+      // Inside corridor, well away from walls: dealers long gamma
+      dealerPositioning   = 'long-gamma'
+      airPocketRisk       = 'low'
+      breakoutSensitivity = 'low'
     }
   }
 
   return {
     structureAvailable: true,
+    greeksAvailable:    greeksPresent,
     putWall,
     callWall,
     zeroGamma,

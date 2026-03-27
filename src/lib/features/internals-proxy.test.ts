@@ -36,17 +36,17 @@ function makeBreadth(overrides: Partial<BreadthModule> = {}): BreadthModule {
     newHighs52w: metricNull,
     newLows52w:  metricNull,
     sectorBreadth: [
-      { sector: 'Tech',       pctAbove50d: 72 },
-      { sector: 'Financials', pctAbove50d: 68 },
-      { sector: 'Industrials',pctAbove50d: 61 },
-      { sector: 'Healthcare', pctAbove50d: 55 },
-      { sector: 'Energy',     pctAbove50d: 55 },
-      { sector: 'Comm Svc',   pctAbove50d: 52 },
-      { sector: 'Materials',  pctAbove50d: 50 },
-      { sector: 'Staples',    pctAbove50d: 44 },
-      { sector: 'Real Estate',pctAbove50d: 38 },
-      { sector: 'Utilities',  pctAbove50d: 30 },
-      { sector: 'Discretionary', pctAbove50d: 28 },
+      { sector: 'Tech',          rangePosition52w: 72 },
+      { sector: 'Financials',    rangePosition52w: 68 },
+      { sector: 'Industrials',   rangePosition52w: 65 },
+      { sector: 'Healthcare',    rangePosition52w: 62 },
+      { sector: 'Energy',        rangePosition52w: 61 },
+      { sector: 'Comm Svc',      rangePosition52w: 52 },
+      { sector: 'Materials',     rangePosition52w: 50 },
+      { sector: 'Staples',       rangePosition52w: 39 },
+      { sector: 'Real Estate',   rangePosition52w: 35 },
+      { sector: 'Utilities',     rangePosition52w: 30 },
+      { sector: 'Discretionary', rangePosition52w: 25 },
     ],
     tapeQuality:      'healthy-rally',
     participation:    'broad',
@@ -58,7 +58,7 @@ function makeBreadth(overrides: Partial<BreadthModule> = {}): BreadthModule {
 
 function makeFlows(overrides: Partial<FlowsModule> = {}): FlowsModule {
   return {
-    etfFlowProxy:       metricNull,
+    etfDollarVolume:    metricNull,
     futuresPressure:    'buying',
     optionsPremiumFlow: 'balanced',
     offExchangeShare:   metricNull,
@@ -144,11 +144,11 @@ describe('buildProxyInternals', () => {
   })
 
   describe('sector counts', () => {
-    it('counts advancing (>=55) and declining (<=45) sectors correctly', () => {
+    it('counts advancing (>=60) and declining (<=40) sectors correctly', () => {
       const r = buildProxyInternals(makeBreadth(), makeFlows())
-      // From fixture: >=55 → Tech(72), Financials(68), Industrials(61), Health(55), Energy(55) = 5
+      // From fixture: >=60 → Tech(72), Financials(68), Industrials(65), Healthcare(62), Energy(61) = 5
       expect(r.sectorAdvancing).toBe(5)
-      // <=45 → Staples(44), RealEstate(38), Utilities(30), Discretionary(28) = 4
+      // <=40 → Staples(39), RealEstate(35), Utilities(30), Discretionary(25) = 4
       expect(r.sectorDeclining).toBe(4)
       expect(r.sectorNeutral).toBe(2)
       expect(r.sectorTotal).toBe(11)
@@ -157,13 +157,13 @@ describe('buildProxyInternals', () => {
     it('returns top 3 advancing sector names', () => {
       const r = buildProxyInternals(makeBreadth(), makeFlows())
       expect(r.topSectors).toHaveLength(3)
-      expect(r.topSectors[0]).toBe('Tech') // highest pctAbove50d first
+      expect(r.topSectors[0]).toBe('Tech') // highest rangePosition52w first
     })
 
     it('returns bottom 3 declining sector names (weakest first)', () => {
       const r = buildProxyInternals(makeBreadth(), makeFlows())
       expect(r.weakSectors).toHaveLength(3)
-      expect(r.weakSectors[0]).toBe('Discretionary') // lowest pctAbove50d = weakest
+      expect(r.weakSectors[0]).toBe('Discretionary') // lowest rangePosition52w = weakest
     })
 
     it('handles empty sector array gracefully', () => {

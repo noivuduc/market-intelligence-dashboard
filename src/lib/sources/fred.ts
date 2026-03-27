@@ -200,6 +200,7 @@ export const FRED_SERIES = {
   ONRRP:            'RRPONTSYD',   // ON RRP Outstanding Amount (daily, $B)
   BALANCE_SHEET:    'WALCL',       // Fed Total Assets / Balance Sheet (millions USD, weekly)
   RESERVE_BALANCES: 'WRESBAL',     // Reserve balances with FR banks (millions USD, weekly)
+  DISCOUNT_RATE:    'DPCREDIT',    // Primary Credit Rate (discount window, daily)
 
   // ---- Treasury Yields ----
   DGS3MO:   'DGS3MO',   // 3-Month Treasury yield

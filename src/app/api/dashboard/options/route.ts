@@ -48,21 +48,18 @@ export async function GET() {
     const liG = serverCache.get<LiquidityModule>(CacheKeys.liquidityModule())
     const maG = serverCache.get<MacroModule>(CacheKeys.macroModule())
     const mkG = serverCache.get<MarketSnapshot>(CacheKeys.marketModule())
+    const coreAvailable = Boolean(fedG || trG || liG || maG || mkG)
     const fed = fedG?.data ?? (placeholders.fed as FedPolicyModule)
     const treasury = trG?.data ?? (placeholders.treasury as TreasuryModule)
     const liquidity = liG?.data ?? (placeholders.liquidity as LiquidityModule)
     const macro = maG?.data ?? (placeholders.macro as MacroModule)
     const market = mkG?.data ?? placeholders.market
-    const regime = computeRegime({
-      fed,
-      liquidity,
-      treasury,
-      macro,
-      breadth: market.breadth,
-      flows: market.flows,
-      options: placeholders.options,
-    })
-    const alerts = buildDashboardAlerts(regime, fed, treasury, liquidity, macro, market)
+    const regime = coreAvailable
+      ? computeRegime({ fed, liquidity, treasury, macro, breadth: market.breadth, flows: market.flows, options: placeholders.options })
+      : null
+    const alerts = coreAvailable
+      ? buildDashboardAlerts(regime!, fed, treasury, liquidity, macro, market)
+      : []
     return NextResponse.json(
       {
         lane: 'options' as const,

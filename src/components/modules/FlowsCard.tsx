@@ -84,8 +84,8 @@ export function FlowsCard({ data }: Props) {
       <div className="grid grid-cols-2 gap-x-4 mb-3 pb-3 border-b border-ops-700">
         <MetricRow
           label="ETF FLOW PROXY"
-          value={data.etfFlowProxy.formatted ?? ''}
-          change={data.etfFlowProxy.changePct}
+          value={data.etfDollarVolume.formatted ?? ''}
+          change={data.etfDollarVolume.changePct}
           source="inferred"
         />
         <MetricRow

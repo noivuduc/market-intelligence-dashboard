@@ -21,7 +21,12 @@ import { logDashboardOptions } from '@/lib/util/optionsDebugLog'
 
 export interface OptionsLaneResponse {
   options:           OptionsModule
-  regime:            RegimeState
+  /**
+   * Regime is null when the core lane has not yet populated server cache
+   * (cold start). The client preserves its existing regime in that case.
+   * Only non-null once at least one core module is available from cache.
+   */
+  regime:            RegimeState | null
   alerts:            Alert[]
   lastLaneUpdate:    string
 }
@@ -37,6 +42,11 @@ export async function buildOptionsLaneResponse(): Promise<OptionsLaneResponse> {
   const liG = serverCache.get<LiquidityModule>(CacheKeys.liquidityModule())
   const maG = serverCache.get<MacroModule>(CacheKeys.macroModule())
   const mkG = serverCache.get<MarketSnapshot>(CacheKeys.marketModule())
+
+  // If no core module is in cache yet (cold start), skip regime computation.
+  // Returning null tells the client to keep its existing regime rather than
+  // flashing a high-confidence placeholder regime before real data arrives.
+  const coreAvailable = Boolean(fedG || trG || liG || maG || mkG)
 
   const fed = fedG?.data ?? (placeholders.fed as FedPolicyModule)
   const treasury = trG?.data ?? (placeholders.treasury as TreasuryModule)
@@ -57,17 +67,13 @@ export async function buildOptionsLaneResponse(): Promise<OptionsLaneResponse> {
     fetchError: options.meta.fetchError ?? null,
   })
 
-  const regime = computeRegime({
-    fed,
-    liquidity,
-    treasury,
-    macro,
-    breadth: market.breadth,
-    flows: market.flows,
-    options,
-  })
+  const regime = coreAvailable
+    ? computeRegime({ fed, liquidity, treasury, macro, breadth: market.breadth, flows: market.flows, options })
+    : null
 
-  const alerts = buildDashboardAlerts(regime, fed, treasury, liquidity, macro, market)
+  const alerts = coreAvailable
+    ? buildDashboardAlerts(regime!, fed, treasury, liquidity, macro, market)
+    : []
 
   return {
     options,

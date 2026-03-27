@@ -120,12 +120,12 @@ export async function buildLiquidityModule(): Promise<LiquidityModule> {
       caveat:     'National Financial Conditions Index (Chicago Fed). Lower = looser conditions.',
     },
   )
-  const fciNyfed = metric(
+  const fciAdjusted = metric(
     anfciC, anfciP, 'index', v => v.toFixed(3),
     undefined,
     {
       sourceName: 'Chicago Fed — ANFCI',
-      caveat:     'Adjusted NFCI removes business cycle effects; not an NY Fed series.',
+      caveat:     'Adjusted NFCI (Chicago Fed) — removes business cycle effects. Field was previously misnamed fciNyfed; this is NOT an NY Fed series.',
     },
   )
 
@@ -193,7 +193,7 @@ export async function buildLiquidityModule(): Promise<LiquidityModule> {
     reserveBalances,
     onRrpUsage,
     qtTrend,
-    fciNyfed,
+    fciAdjusted,
     fciChicago,
     recessionProb,
     hySpread,

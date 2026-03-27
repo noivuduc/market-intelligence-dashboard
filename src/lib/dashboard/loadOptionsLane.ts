@@ -3,6 +3,7 @@
 // ============================================================
 
 import { serverCache, CacheKeys, TTL } from '@/lib/cache/server'
+import type { OptionsModule } from '@/lib/types'
 import { buildOptionsModuleFromChain } from '@/lib/features/options'
 import { fetchPolygonSpxOptionChainSnapshot } from '@/lib/sources/polygon-options'
 import { fetchYahooSpxOptionChainSnapshot } from '@/lib/sources/yahoo-options'
@@ -11,11 +12,22 @@ import {
   resolveOptionsChainSourceMode,
 } from '@/lib/sources/options-chain-source'
 import { buildPlaceholders } from '@/app/api/dashboard/placeholders'
-import type { OptionsModule } from '@/lib/types'
 import type { SpxOptionChainSnapshot } from '@/lib/sources/option-chain-types'
 import { logDashboardOptions } from '@/lib/util/optionsDebugLog'
 
 export async function loadOptionsModuleForDashboard(
+  spotForOptions: number | null,
+): Promise<OptionsModule> {
+  const mod = await _loadOptionsModule(spotForOptions)
+  // Cache the built module so the core lane can use it for regime computation,
+  // eliminating the positioning sub-score divergence that causes regime flicker.
+  if (mod.structureAvailable) {
+    serverCache.set(CacheKeys.optionsModule(), mod, TTL.OPTIONS_STRUCTURE)
+  }
+  return mod
+}
+
+async function _loadOptionsModule(
   spotForOptions: number | null,
 ): Promise<OptionsModule> {
   const placeholders = buildPlaceholders()
