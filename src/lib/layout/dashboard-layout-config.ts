@@ -9,10 +9,10 @@
 //
 // Canonical module order (top → bottom, priority → advanced):
 //
-//  [TOP]      command-brief  cross-asset  event-calendar  alerts
-//  [POLICY]   fed  treasury  macro  liquidity
-//  [MARKET]   breadth  watchlist  flows
-//  [ADVANCED] options  internals  retail-organic  collar
+//  [TOP]      cross-asset  alerts  command-brief  event-calendar
+//  [POLICY]   fed  treasury  macro  liquidity  flows
+//  [MARKET]   breadth  watchlist
+//  [ADVANCED] options  internals  collar  retail-organic
 // ============================================================
 
 import type { Layout, LayoutItem, ResponsiveLayouts } from 'react-grid-layout/legacy'
@@ -20,7 +20,7 @@ import type { Layout, LayoutItem, ResponsiveLayouts } from 'react-grid-layout/le
 /** Bump when default positions change enough that old saved layouts
  *  would appear mis-ordered. The storage key embeds this version so
  *  any save from version N is silently discarded at version N+1. */
-export const DEFAULT_LAYOUT_VERSION = 2
+export const DEFAULT_LAYOUT_VERSION = 3
 
 /**
  * Stable card IDs — order defines the canonical visual sequence.
@@ -110,30 +110,32 @@ function applyConstraints(layout: Layout): Layout {
 // ============================================================
 // DESKTOP — 12 columns
 //
-//  y= 0  command-brief (full width, h=9)
-//  y= 9  cross-asset   (full width, h=5)
-//  y=14  event-calendar (w=7) | alerts (w=5)
-//  y=22  fed (w=3) | treasury (w=3) | macro (w=3) | liquidity (w=3)
-//  y=30  breadth (w=4) | watchlist (w=5) | flows (w=3)
-//  y=39  options (w=7) | internals (w=5)
-//  y=49  retail-organic (w=8) | collar (w=4)
+//  y= 0  cross-asset    (full width, h=4)
+//  y= 4  alerts         (full width, h=4)
+//  y= 8  command-brief  (full width, h=15)
+//  y=23  event-calendar (w=6) | flows (w=3) | liquidity (w=3)
+//  y=31  fed (w=5) | treasury (w=3) | macro (w=4)
+//  y=40  breadth (w=5) | watchlist (w=7)
+//  y=53  options (w=8) | internals (w=4)
+//  y=63  collar (x=8, w=4)
+//  y=72  retail-organic (full width, h=13)
 // ============================================================
 export const DEFAULT_LAYOUT_LG: Layout = applyConstraints([
-  item('command-brief',  0,  0, 12, 9, { minH: 6 }),
-  item('cross-asset',    0,  9, 12, 5),
-  item('event-calendar', 0, 14,  7, 8),
-  item('alerts',         7, 14,  5, 8, { minH: 2 }),
-  item('fed',            0, 22,  3, 8),
-  item('treasury',       3, 22,  3, 8),
-  item('macro',          6, 22,  3, 8),
-  item('liquidity',      9, 22,  3, 8),
-  item('breadth',        0, 30,  4, 9),
-  item('watchlist',      4, 30,  5, 9, { minH: 4 }),
-  item('flows',          9, 30,  3, 9),
-  item('options',        0, 39,  7, 10),
-  item('internals',      7, 39,  5,  6, { minH: 4 }),
-  item('retail-organic', 0, 49,  8,  9),
-  item('collar',         8, 49,  4,  8),
+  item('cross-asset',    0,  0, 12,  4),
+  item('alerts',         0,  4, 12,  4),
+  item('command-brief',  0,  8, 12, 15),
+  item('event-calendar', 0, 23,  6,  8),
+  item('flows',          6, 23,  3,  8),
+  item('liquidity',      9, 23,  3,  8),
+  item('fed',            0, 31,  5,  9),
+  item('treasury',       5, 31,  3,  9),
+  item('macro',          8, 31,  4,  9),
+  item('breadth',        0, 40,  5, 13),
+  item('watchlist',      5, 40,  7, 13),
+  item('options',        0, 53,  8, 19),
+  item('internals',      8, 53,  4, 10),
+  item('collar',         8, 63,  4,  9),
+  item('retail-organic', 0, 72, 12, 13),
 ])
 
 // ============================================================
